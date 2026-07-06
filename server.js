@@ -17,8 +17,17 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/financ
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-this-session-secret-in-production';
 const BCRYPT_SALT_ROUNDS = 12;
 
+// Default admin credentials
+const DEFAULT_ADMIN = {
+  name: 'Admin User',
+  email: 'admin@example.com',
+  password: 'Admin@12345',
+  role: 'admin',
+  isActive: true
+};
+
 // =========================
-// SECURITY / MIDDLEWARE
+// MIDDLEWARE
 // =========================
 app.use(helmet());
 app.use(express.urlencoded({ extended: true }));
@@ -32,8 +41,8 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false, // set true behind HTTPS in production if needed
-      maxAge: 1000 * 60 * 60 * 24 // 1 day
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 24
     }
   })
 );
@@ -42,7 +51,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // =========================
-// MONGOOSE MODEL
+// SCHEMA / MODEL
 // =========================
 const userSchema = new mongoose.Schema(
   {
@@ -89,7 +98,6 @@ function renderLogin(res, options = {}) {
     title: 'Login | Financial Suite',
     error: options.error || null,
     success: options.success || null,
-    sessionUser: null,
     mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     serverStatus: 'Running'
   });
@@ -111,6 +119,35 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
   next();
+}
+
+// =========================
+// AUTO ADMIN SEED
+// =========================
+async function seedDefaultAdmin() {
+  try {
+    const existingAdmin = await User.findOne({ email: DEFAULT_ADMIN.email });
+
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN.password, BCRYPT_SALT_ROUNDS);
+
+      await User.create({
+        name: DEFAULT_ADMIN.name,
+        email: DEFAULT_ADMIN.email,
+        password: hashedPassword,
+        role: DEFAULT_ADMIN.role,
+        isActive: DEFAULT_ADMIN.isActive
+      });
+
+      console.log('âœ… Default admin user created');
+      console.log(`Email: ${DEFAULT_ADMIN.email}`);
+      console.log(`Password: ${DEFAULT_ADMIN.password}`);
+    } else {
+      console.log('â„¹ï¸ Default admin user already exists');
+    }
+  } catch (error) {
+    console.error('âŒ Admin seed failed:', error.message);
+  }
 }
 
 // =========================
@@ -146,6 +183,7 @@ app.post('/login', async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
       return renderLogin(res, { error: 'Invalid email or password.' });
     }
@@ -179,7 +217,6 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// Optional health endpoint for Render
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -188,9 +225,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// =========================
-// 404
-// =========================
 app.use((req, res) => {
   if (req.session.user) {
     return res.status(404).send('Page not found');
@@ -199,7 +233,7 @@ app.use((req, res) => {
 });
 
 // =========================
-// STARTUP
+// START SERVER
 // =========================
 async function startServer() {
   try {
@@ -207,27 +241,19 @@ async function startServer() {
       dbName: 'financial_suite'
     });
 
-    console.log('MongoDB connected successfully');
-    console.log(`Database: financial_suite`);
-    console.log(`Collection: users`);
+    console.log('âœ… MongoDB connected');
+    console.log('Database: financial_suite');
+    console.log('Collection: users');
+
+    await seedDefaultAdmin();
 
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`âœ… Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.error('Failed to connect to MongoDB:', error.message);
+    console.error('âŒ Failed to start server:', error.message);
     process.exit(1);
   }
 }
 
 startServer();
-
-// =========================
-// OPTIONAL SEED NOTE
-// =========================
-// To create an initial admin user, insert a user document in MongoDB Atlas
-// with a bcrypt-hashed password. Example fields:
-// name, email, password, role, isActive, createdAt
-//
-// Example hash generation (run locally if needed):
-// bcrypt.hashSync('YourPassword123', 12)
