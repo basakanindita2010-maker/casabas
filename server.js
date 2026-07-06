@@ -218,22 +218,31 @@ function analysisFromRatios(r) {
   const notes = [];
   if (r.currentRatio < 1) notes.push('Liquidity appears weak; current ratio is below 1.');
   else notes.push('Liquidity is adequate based on current ratio.');
+
   if (r.quickRatio < 1) notes.push('Quick ratio suggests limited near-term liquid coverage.');
   else notes.push('Quick ratio indicates decent short-term liquidity.');
+
   if (r.debtEquity > 2) notes.push('Leverage is high; debt/equity ratio exceeds 2.');
   else notes.push('Leverage appears manageable.');
+
   if (r.roe < 0.1) notes.push('ROE is modest; consider improving profitability.');
   else notes.push('ROE indicates efficient use of equity.');
+
   if (r.roce < 0.1) notes.push('ROCE is low; capital employed may be under-optimized.');
   else notes.push('ROCE shows healthy capital efficiency.');
+
   if (r.ebitda < 0) notes.push('Negative EBITDA requires urgent operational review.');
   else notes.push('EBITDA is positive, supporting operating performance.');
+
   if (r.workingCapital < 0) notes.push('Negative working capital may strain operations.');
   else notes.push('Working capital is positive.');
+
   if (r.eps < 0) notes.push('EPS is negative; shareholders may be impacted.');
   else notes.push('EPS is positive.');
+
   if (r.bookValue < 0) notes.push('Book value is negative; liabilities exceed assets.');
   else notes.push('Book value is positive.');
+
   return notes;
 }
 
@@ -384,9 +393,13 @@ async function renderApp(req, res, options = {}) {
     ...dh.map((x) => ({ kind: 'document', at: x.createdAt, text: `${x.action}: ${x.details}` }))
   ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 10));
 
-  const recommendations = section === 'finance' && financialStatements.length ? recommendationsFromRatios(financialStatements[0].computedRatios || {}) : [];
-  const analysis = section === 'finance' && financialStatements.length ? analysisFromRatios(financialStatements[0].computedRatios || {}) : [];
-  const selectedStatement = section === 'finance' && financialStatements.length ? financialStatements[0] : null;
+  const recommendations = section === 'finance' && financialStatements.length
+    ? recommendationsFromRatios(financialStatements[0].computedRatios || {})
+    : [];
+
+  const analysis = section === 'finance' && financialStatements.length
+    ? analysisFromRatios(financialStatements[0].computedRatios || {})
+    : [];
 
   return res.render('app', {
     title: 'Financial Suite | Dashboard',
@@ -394,7 +407,7 @@ async function renderApp(req, res, options = {}) {
     stats,
     clients, users, auditLogs, recentActivities, tagCloud,
     documents, documentCategories, documentOwners, documentHistory, documentTimeline,
-    financialStatements, combinedFeed, recommendations, analysis, selectedStatement,
+    financialStatements, combinedFeed, recommendations, analysis,
     q, status, tag, page, totalPages, editClient, editMode: !!editClient, viewClient, viewMode: !!viewClient, viewActivities,
     timelineAction, auditAction, auditEntity, auditStart, auditEnd, docActivityFilter, docOwnerFilter,
     fsQuery, fsType, fsHistory,
@@ -485,12 +498,7 @@ app.post('/financial-statements', requireAuth, async (req, res) => {
     const parsedPrev = previousYearData ? JSON.parse(previousYearData) : {};
     const parsedData = data ? JSON.parse(data) : {};
     const computedRatios = calcRatios(parsedData);
-    const stmt = await FinancialStatement.create({
-      statementType, year: Number(year),
-      previousYearData: parsedPrev, data: parsedData, computedRatios,
-      history: [{ action: 'created', at: new Date(), notes: 'Financial statement created', by: req.session.user.email }],
-      createdBy: req.session.user.email
-    });
+    const stmt = await FinancialStatement.create({ statementType, year: Number(year), previousYearData: parsedPrev, data: parsedData, computedRatios, history: [{ action: 'created', at: new Date(), notes: 'Financial statement created', by: req.session.user.email }], createdBy: req.session.user.email });
     await writeAudit(req, 'CREATE', 'financial_statement', stmt._id, `${statementType} for year ${year}`);
     return res.redirect('/app?section=finance');
   } catch (error) { console.error(error); return renderApp(req, res, { error: 'Unable to save financial statement.' }); }
