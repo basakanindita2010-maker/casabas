@@ -17,7 +17,6 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/financ
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-this-session-secret-in-production';
 const BCRYPT_SALT_ROUNDS = 12;
 
-// Default admin credentials
 const DEFAULT_ADMIN = {
   name: 'Admin User',
   email: 'admin@example.com',
@@ -51,36 +50,15 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // =========================
-// SCHEMA / MODEL
+// MODEL
 // =========================
 const userSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      trim: true,
-      default: 'User'
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-      index: true
-    },
-    password: {
-      type: String,
-      required: true
-    },
-    role: {
-      type: String,
-      enum: ['admin', 'member'],
-      default: 'member'
-    },
-    isActive: {
-      type: Boolean,
-      default: true
-    }
+    name: { type: String, trim: true, required: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+    password: { type: String, required: true },
+    role: { type: String, enum: ['admin', 'user'], default: 'user' },
+    isActive: { type: Boolean, default: true }
   },
   {
     collection: 'users',
@@ -95,59 +73,63 @@ const User = mongoose.model('User', userSchema);
 // =========================
 function renderLogin(res, options = {}) {
   return res.render('login', {
-    title: 'Login | Financial Suite',
+    title: 'Financial Suite | Login',
     error: options.error || null,
     success: options.success || null,
+    mode: options.mode || 'login',
     mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     serverStatus: 'Running'
   });
 }
 
-function renderDashboard(req, res, options = {}) {
+async function getDashboardStats() {
+  const totalUsers = await User.countDocuments();
+  const activeUsers = await User.countDocuments({ isActive: true });
+  const admins = await User.countDocuments({ role: 'admin' });
+  return { totalUsers, activeUsers, admins };
+}
+
+async function renderApp(req, res, options = {}) {
+  const stats = await getDashboardStats();
   return res.render('app', {
-    title: 'Dashboard | Financial Suite',
+    title: 'Financial Suite | Dashboard',
     user: req.session.user,
     error: options.error || null,
     success: options.success || null,
+    stats,
     mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     serverStatus: 'Running'
   });
 }
 
 function requireAuth(req, res, next) {
-  if (!req.session.user) {
-    return res.redirect('/login');
-  }
+  if (!req.session.user) return res.redirect('/login');
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.user) return res.redirect('/login');
+  if (req.session.user.role !== 'admin') return res.status(403).send('Forbidden');
   next();
 }
 
 // =========================
-// AUTO ADMIN SEED
+// SEED ADMIN
 // =========================
 async function seedDefaultAdmin() {
-  try {
-    const existingAdmin = await User.findOne({ email: DEFAULT_ADMIN.email });
+  const existing = await User.findOne({ email: DEFAULT_ADMIN.email });
+  if (existing) return;
 
-    if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN.password, BCRYPT_SALT_ROUNDS);
+  const hashed = await bcrypt.hash(DEFAULT_ADMIN.password, BCRYPT_SALT_ROUNDS);
+  await User.create({
+    name: DEFAULT_ADMIN.name,
+    email: DEFAULT_ADMIN.email,
+    password: hashed,
+    role: DEFAULT_ADMIN.role,
+    isActive: DEFAULT_ADMIN.isActive
+  });
 
-      await User.create({
-        name: DEFAULT_ADMIN.name,
-        email: DEFAULT_ADMIN.email,
-        password: hashedPassword,
-        role: DEFAULT_ADMIN.role,
-        isActive: DEFAULT_ADMIN.isActive
-      });
-
-      console.log('âœ… Default admin user created');
-      console.log(`Email: ${DEFAULT_ADMIN.email}`);
-      console.log(`Password: ${DEFAULT_ADMIN.password}`);
-    } else {
-      console.log('â„¹ï¸ Default admin user already exists');
-    }
-  } catch (error) {
-    console.error('âŒ Admin seed failed:', error.message);
-  }
+  console.log('Default admin created:', DEFAULT_ADMIN.email);
 }
 
 // =========================
@@ -160,7 +142,51 @@ app.get('/', (req, res) => {
 
 app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/app');
-  renderLogin(res);
+  renderLogin(res, { mode: 'login' });
+});
+
+app.get('/register', (req, res) => {
+  if (req.session.user) return res.redirect('/app');
+  renderLogin(res, { mode: 'register' });
+});
+
+app.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return renderLogin(res, { mode: 'register', error: 'All fields are required.' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = await User.findOne({ email: normalizedEmail });
+
+    if (existing) {
+      return renderLogin(res, { mode: 'register', error: 'This email is already registered.' });
+    }
+
+    const hashed = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+
+    const user = await User.create({
+      name: String(name).trim(),
+      email: normalizedEmail,
+      password: hashed,
+      role: 'user',
+      isActive: true
+    });
+
+    req.session.user = {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role
+    };
+
+    return res.redirect('/app');
+  } catch (error) {
+    console.error('Register error:', error);
+    return renderLogin(res, { mode: 'register', error: 'Registration failed. Please try again.' });
+  }
 });
 
 app.post('/login', async (req, res) => {
@@ -168,25 +194,17 @@ app.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return renderLogin(res, { error: 'Email and password are required.' });
+      return renderLogin(res, { mode: 'login', error: 'Email and password are required.' });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user) {
-      return renderLogin(res, { error: 'Invalid email or password.' });
-    }
+    if (!user) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
+    if (!user.isActive) return renderLogin(res, { mode: 'login', error: 'Your account is inactive.' });
 
-    if (!user.isActive) {
-      return renderLogin(res, { error: 'Your account is inactive. Please contact support.' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return renderLogin(res, { error: 'Invalid email or password.' });
-    }
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
 
     req.session.user = {
       id: user._id.toString(),
@@ -198,27 +216,86 @@ app.post('/login', async (req, res) => {
     return res.redirect('/app');
   } catch (error) {
     console.error('Login error:', error);
-    return renderLogin(res, { error: 'An unexpected error occurred. Please try again.' });
+    return renderLogin(res, { mode: 'login', error: 'Login failed. Please try again.' });
   }
 });
 
-app.get('/app', requireAuth, (req, res) => {
-  renderDashboard(req, res);
+app.get('/app', requireAuth, async (req, res) => {
+  return renderApp(req, res);
+});
+
+app.post('/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return renderApp(req, res, { error: 'Current password and new password are required.' });
+    }
+
+    const user = await User.findById(req.session.user.id);
+    if (!user) return req.session.destroy(() => res.redirect('/login'));
+
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) return renderApp(req, res, { error: 'Current password is incorrect.' });
+
+    user.password = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await user.save();
+
+    return renderApp(req, res, { success: 'Password changed successfully.' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    return renderApp(req, res, { error: 'Unable to change password.' });
+  }
 });
 
 app.post('/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('Logout error:', err);
-      return res.redirect('/app');
-    }
+  req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    return res.redirect('/login');
+    res.redirect('/login');
   });
 });
 
+// Admin actions
+app.post('/admin/toggle-user/:id', requireAdmin, async (req, res) => {
+  try {
+    const target = await User.findById(req.params.id);
+    if (!target) return renderApp(req, res, { error: 'User not found.' });
+
+    if (target.email === DEFAULT_ADMIN.email) {
+      return renderApp(req, res, { error: 'Default admin cannot be deactivated.' });
+    }
+
+    target.isActive = !target.isActive;
+    await target.save();
+
+    return res.redirect('/app');
+  } catch (error) {
+    console.error('Toggle user error:', error);
+    return renderApp(req, res, { error: 'Unable to update user status.' });
+  }
+});
+
+app.post('/admin/change-role/:id', requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!['admin', 'user'].includes(role)) {
+      return renderApp(req, res, { error: 'Invalid role selected.' });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) return renderApp(req, res, { error: 'User not found.' });
+
+    target.role = role;
+    await target.save();
+
+    return res.redirect('/app');
+  } catch (error) {
+    console.error('Change role error:', error);
+    return renderApp(req, res, { error: 'Unable to change role.' });
+  }
+});
+
 app.get('/health', (req, res) => {
-  res.status(200).json({
+  res.json({
     status: 'ok',
     server: 'running',
     mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
@@ -226,32 +303,23 @@ app.get('/health', (req, res) => {
 });
 
 app.use((req, res) => {
-  if (req.session.user) {
-    return res.status(404).send('Page not found');
-  }
+  if (req.session.user) return res.status(404).send('Page not found');
   return res.redirect('/login');
 });
 
 // =========================
-// START SERVER
+// START
 // =========================
 async function startServer() {
   try {
-    await mongoose.connect(MONGODB_URI, {
-      dbName: 'financial_suite'
-    });
-
-    console.log('âœ… MongoDB connected');
-    console.log('Database: financial_suite');
-    console.log('Collection: users');
-
+    await mongoose.connect(MONGODB_URI, { dbName: 'financial_suite' });
     await seedDefaultAdmin();
 
     app.listen(PORT, () => {
-      console.log(`âœ… Server running on port ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.error('âŒ Failed to start server:', error.message);
+    console.error('Startup error:', error);
     process.exit(1);
   }
 }
