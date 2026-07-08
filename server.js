@@ -72,9 +72,7 @@ app.use(
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-/* =========================
-   SCHEMAS
-========================= */
+/* Schemas */
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
@@ -252,14 +250,11 @@ const SMEAdvisory = mongoose.model('SMEAdvisory', advisorySchema);
 const LoanApplication = mongoose.model('LoanApplication', loanApplicationSchema);
 const FinancialStatement = mongoose.model('FinancialStatement', financialStatementSchema);
 
-/* =========================
-   HELPERS
-========================= */
+/* Helpers */
 function requireAuth(req, res, next) {
   if (!req.session.user) return res.redirect('/login');
   next();
 }
-
 function renderLogin(res, options = {}) {
   return res.render('login', {
     title: 'Financial Suite | Login',
@@ -270,7 +265,6 @@ function renderLogin(res, options = {}) {
     serverStatus: 'Running'
   });
 }
-
 async function writeAudit(req, action, entity, entityId = '', details = '') {
   try {
     await AuditLog.create({
@@ -285,17 +279,11 @@ async function writeAudit(req, action, entity, entityId = '', details = '') {
     console.error('Audit log error:', e.message);
   }
 }
-
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function readinessBand(score) { if (score >= 80) return 'Ready'; if (score >= 60) return 'Near Ready'; if (score >= 40) return 'Monitor'; return 'High Risk'; }
 function bankComparisonFromAdvisory(app, readinessScore) {
-  const banks = [
-    { bankName: 'SBI', min: 65 },
-    { bankName: 'HDFC', min: 72 },
-    { bankName: 'ICICI', min: 70 },
-    { bankName: 'Axis', min: 68 }
-  ];
+  const banks = [{ bankName: 'SBI', min: 65 }, { bankName: 'HDFC', min: 72 }, { bankName: 'ICICI', min: 70 }, { bankName: 'Axis', min: 68 }];
   return banks.map((b) => ({
     bankName: b.bankName,
     score: clamp(Math.round(readinessScore), 0, 100),
@@ -304,12 +292,7 @@ function bankComparisonFromAdvisory(app, readinessScore) {
   }));
 }
 function lenderMatrixFromAdvisory(app, readinessScore) {
-  const banks = [
-    { bankName: 'SBI', dscrThreshold: 1.25, min: 65 },
-    { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 },
-    { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 },
-    { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }
-  ];
+  const banks = [{ bankName: 'SBI', dscrThreshold: 1.25, min: 65 }, { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 }, { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 }, { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }];
   return banks.map((b) => ({
     bankName: b.bankName,
     score: clamp(Math.round(readinessScore), 0, 100),
@@ -340,7 +323,15 @@ function advisoryRecommendations(app, readinessScore, bankComparison) {
   return { strengths, weaknesses, risks, actions };
 }
 async function openaiRecommendations(payload) {
-  if (!openai) return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions };
+  if (!openai) {
+    return {
+      executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`,
+      strengths: payload.strengths,
+      weaknesses: payload.weaknesses,
+      risks: payload.risks,
+      actions: payload.actions
+    };
+  }
   try {
     const prompt = `You are an SME lending advisor. Business: ${JSON.stringify(payload.advisoryInput, null, 2)} Readiness score: ${payload.readinessScore} Lender matrix: ${JSON.stringify(payload.lenderMatrix || [], null, 2)} Bank comparison: ${JSON.stringify(payload.bankComparison, null, 2)} Return JSON only: { "executiveSummary": "string", "strengths": ["string"], "weaknesses": ["string"], "risks": ["string"], "actions": ["string"] }`;
     const completion = await openai.chat.completions.create({
@@ -369,17 +360,6 @@ async function openaiRecommendations(payload) {
     };
   }
 }
-function createLoanApplicationReportPayload(loan) {
-  const borrowerProfileScore = clamp(Math.round((n(loan.creditScore) / 10) || 0), 0, 100);
-  return {
-    scoring: {
-      borrowerProfileScore,
-      bankWiseRating: borrowerProfileScore >= 80 ? 'A' : borrowerProfileScore >= 65 ? 'B' : 'NR',
-      riskBand: borrowerProfileScore >= 80 ? 'Low' : borrowerProfileScore >= 65 ? 'Medium' : 'High',
-      approvalStatus: borrowerProfileScore >= 70 ? 'Likely' : 'Review'
-    }
-  };
-}
 function smeAdvisoryToPdfHtml(item) {
   const bc = item.bankComparison || [];
   const lm = item.lenderMatrix || [];
@@ -395,19 +375,13 @@ function smeAdvisoryWorkbook(item) {
   return wb;
 }
 async function getDashboardStats() {
-  const [totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories] = await Promise.all([
-    User.countDocuments(),
-    Client.countDocuments(),
-    Document.countDocuments(),
-    LoanApplication.countDocuments(),
-    SMEAdvisory.countDocuments()
+  const [totalUsers, totalClients, totalDocuments, totalLoans] = await Promise.all([
+    User.countDocuments(), Client.countDocuments(), Document.countDocuments(), LoanApplication.countDocuments()
   ]);
-  return { totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories };
+  return { totalUsers, totalClients, totalDocuments, totalLoans };
 }
 
-/* =========================
-   ROUTES
-========================= */
+/* Routes */
 app.get('/', (req, res) => (req.session.user ? res.redirect('/app') : res.redirect('/login')));
 app.get('/login', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'login' }); });
 app.get('/register', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'register' }); });
@@ -467,8 +441,6 @@ app.get('/app', requireAuth, async (req, res) => {
   const documents = normalizedSection === 'documents' ? await Document.find({}).sort({ createdAt: -1 }).limit(25).lean() : [];
   const loanApplications = normalizedSection === 'loans' ? await LoanApplication.find(bankFilter ? { bankName: { $regex: bankFilter, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
   const advisories = normalizedSection === 'advisory' ? await SMEAdvisory.find(advIndustry ? { industry: { $regex: advIndustry, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
-  const combinedFeed = [];
-
   return res.render('app', {
     title: 'Financial Suite | Dashboard',
     user: req.session.user,
@@ -481,7 +453,7 @@ app.get('/app', requireAuth, async (req, res) => {
     advisories,
     latestLoanApplication: loanApplications[0] || null,
     latestAdvisory: advisories[0] || null,
-    combinedFeed,
+    combinedFeed: [],
     section: normalizedSection,
     bankFilter,
     advIndustry,
@@ -499,21 +471,12 @@ app.get('/app', requireAuth, async (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    server: 'running',
-    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    openai: openai ? 'configured' : 'not-configured'
-  });
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', server: 'running', mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', openai: openai ? 'configured' : 'not-configured' }));
 
 app.use((err, req, res, next) => {
   console.error(err.message);
   if (err.message === 'File too large.' || err.message === 'File type not allowed.') {
-    if (req.session.user) {
-      return res.status(400).send(err.message);
-    }
+    if (req.session.user) return res.status(400).send(err.message);
     return renderLogin(res, { mode: 'login', error: err.message });
   }
   return res.status(500).send('Internal server error');
@@ -524,13 +487,9 @@ app.use((req, res) => {
   return res.redirect('/login');
 });
 
-/* =========================
-   STARTUP
-========================= */
 async function startServer() {
   try {
     await mongoose.connect(MONGODB_URI, { dbName: 'financial_suite' });
-
     const hashed = await bcrypt.hash(DEFAULT_ADMIN.password, SALT_ROUNDS);
     await User.updateOne(
       { email: DEFAULT_ADMIN.email },
@@ -545,7 +504,6 @@ async function startServer() {
       },
       { upsert: true }
     );
-
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   } catch (error) {
     console.error('Startup error:', error);
