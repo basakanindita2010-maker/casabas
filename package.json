@@ -1,7 +1,7 @@
 {
   "name": "financial-suite-saas",
   "version": "35.0.0",
-  "description": "Professional SaaS with SME lending advisory, credit committee decisions, banker-ready proposal letters, ZIP exports, and individual advisory downloads.",
+  "description": "Professional SaaS with SME lending advisory, banker-ready proposal letters, ZIP exports, and individual advisory downloads.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
