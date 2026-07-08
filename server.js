@@ -72,9 +72,7 @@ app.use(
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-/* =========================
-   SCHEMAS
-========================= */
+/* ------------------- Schemas ------------------- */
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
@@ -252,156 +250,58 @@ const SMEAdvisory = mongoose.model('SMEAdvisory', advisorySchema);
 const LoanApplication = mongoose.model('LoanApplication', loanApplicationSchema);
 const FinancialStatement = mongoose.model('FinancialStatement', financialStatementSchema);
 
-/* =========================
-   HELPERS
-========================= */
-function requireAuth(req, res, next) {
-  if (!req.session.user) return res.redirect('/login');
-  next();
-}
-
-function renderLogin(res, options = {}) {
-  return res.render('login', {
-    title: 'Financial Suite | Login',
-    mode: options.mode || 'login',
-    error: options.error || null,
-    success: options.success || null,
-    mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    serverStatus: 'Running'
-  });
-}
-
-async function writeAudit(req, action, entity, entityId = '', details = '') {
-  try {
-    await AuditLog.create({
-      actorId: req.session.user?.id,
-      actorEmail: req.session.user?.email || '',
-      action,
-      entity,
-      entityId: String(entityId || ''),
-      details
-    });
-  } catch (e) {
-    console.error('Audit log error:', e.message);
-  }
-}
-
+/* ------------------- Helpers ------------------- */
+function requireAuth(req, res, next) { if (!req.session.user) return res.redirect('/login'); next(); }
+function renderLogin(res, options = {}) { return res.render('login', { title: 'Financial Suite | Login', mode: options.mode || 'login', error: options.error || null, success: options.success || null, mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected', serverStatus: 'Running' }); }
+async function writeAudit(req, action, entity, entityId = '', details = '') { try { await AuditLog.create({ actorId: req.session.user?.id, actorEmail: req.session.user?.email || '', action, entity, entityId: String(entityId || ''), details }); } catch (e) { console.error('Audit log error:', e.message); } }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function readinessBand(score) { if (score >= 80) return 'Ready'; if (score >= 60) return 'Near Ready'; if (score >= 40) return 'Monitor'; return 'High Risk'; }
 
 function bankComparisonFromAdvisory(app, readinessScore) {
-  const banks = [
-    { bankName: 'SBI', min: 65 },
-    { bankName: 'HDFC', min: 72 },
-    { bankName: 'ICICI', min: 70 },
-    { bankName: 'Axis', min: 68 }
-  ];
-  return banks.map((b) => ({
-    bankName: b.bankName,
-    score: clamp(Math.round(readinessScore), 0, 100),
-    fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit',
-    verdict: readinessScore >= b.min ? 'Proceed' : 'Review'
-  }));
+  const banks = [{ bankName: 'SBI', min: 65 }, { bankName: 'HDFC', min: 72 }, { bankName: 'ICICI', min: 70 }, { bankName: 'Axis', min: 68 }];
+  return banks.map((b) => ({ bankName: b.bankName, score: clamp(Math.round(readinessScore), 0, 100), fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit', verdict: readinessScore >= b.min ? 'Proceed' : 'Review' }));
 }
 
 function lenderMatrixFromAdvisory(app, readinessScore) {
-  const banks = [
-    { bankName: 'SBI', dscrThreshold: 1.25, min: 65 },
-    { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 },
-    { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 },
-    { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }
-  ];
-  return banks.map((b) => ({
-    bankName: b.bankName,
-    score: clamp(Math.round(readinessScore), 0, 100),
-    dscrThreshold: b.dscrThreshold,
-    fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit',
-    verdict: readinessScore >= b.min ? 'Proceed' : 'Review'
-  }));
+  const banks = [{ bankName: 'SBI', dscrThreshold: 1.25, min: 65 }, { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 }, { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 }, { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }];
+  return banks.map((b) => ({ bankName: b.bankName, score: clamp(Math.round(readinessScore), 0, 100), dscrThreshold: b.dscrThreshold, fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit', verdict: readinessScore >= b.min ? 'Proceed' : 'Review' }));
 }
 
 function advisoryRecommendations(app, readinessScore, bankComparison) {
-  const strengths = [];
-  const weaknesses = [];
-  const risks = [];
-  const actions = [];
-
+  const strengths = [], weaknesses = [], risks = [], actions = [];
   if (readinessScore >= 80) strengths.push('Business is lending-ready based on the current profile.');
   if (n(app.ebitda) > 0) strengths.push('EBITDA is positive.');
   if (n(app.collateralValue) >= n(app.loanAmountRequired)) strengths.push('Collateral coverage is adequate.');
   if (n(app.ownerCreditScore) >= 750) strengths.push('Owner credit profile is strong.');
-
   if (n(app.ebitda) <= 0) weaknesses.push('EBITDA is weak or negative.');
   if (n(app.existingDebt) > n(app.annualTurnover) * 0.8) weaknesses.push('Debt burden is high.');
   if (n(app.workingCapitalCycleDays) > 90) weaknesses.push('Working capital cycle is stretched.');
-
   if (readinessScore < 60) risks.push('Bank rejection risk is elevated.');
   if (n(app.loanAmountRequired) > n(app.annualTurnover) * 0.5) risks.push('Requested amount may be aggressive versus turnover.');
   if (n(app.currentLiabilities) > n(app.currentAssets)) risks.push('Liquidity risk is present.');
-
   const topBank = bankComparison.find((b) => b.verdict === 'Proceed') || bankComparison[0];
   actions.push(`Focus on ${topBank.bankName} as the primary lender option.`);
   actions.push('Improve DSCR and reduce working capital cycle where possible.');
   actions.push('Prepare a lender note with cash flow summary and collateral details.');
-
   return { strengths, weaknesses, risks, actions };
 }
 
 async function openaiRecommendations(payload) {
-  if (!openai) {
-    return {
-      executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`,
-      strengths: payload.strengths,
-      weaknesses: payload.weaknesses,
-      risks: payload.risks,
-      actions: payload.actions
-    };
-  }
-
+  if (!openai) return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions };
   try {
     const prompt = `You are an SME lending advisor. Business: ${JSON.stringify(payload.advisoryInput, null, 2)} Readiness score: ${payload.readinessScore} Lender matrix: ${JSON.stringify(payload.lenderMatrix || [], null, 2)} Bank comparison: ${JSON.stringify(payload.bankComparison, null, 2)} Return JSON only: { "executiveSummary": "string", "strengths": ["string"], "weaknesses": ["string"], "risks": ["string"], "actions": ["string"] }`;
-
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
-      messages: [
-        { role: 'system', content: 'Return only valid JSON for SME lending advisory.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.35
-    });
-
+    const completion = await openai.chat.completions.create({ model: OPENAI_MODEL, messages: [{ role: 'system', content: 'Return only valid JSON for SME lending advisory.' }, { role: 'user', content: prompt }], temperature: 0.35 });
     const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
-
-    return {
-      executiveSummary: parsed.executiveSummary || `SME readiness score: ${payload.readinessScore}/100.`,
-      strengths: Array.isArray(parsed.strengths) ? parsed.strengths : payload.strengths,
-      weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : payload.weaknesses,
-      risks: Array.isArray(parsed.risks) ? parsed.risks : payload.risks,
-      actions: Array.isArray(parsed.actions) ? parsed.actions : payload.actions
-    };
+    return { executiveSummary: parsed.executiveSummary || `SME readiness score: ${payload.readinessScore}/100.`, strengths: Array.isArray(parsed.strengths) ? parsed.strengths : payload.strengths, weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : payload.weaknesses, risks: Array.isArray(parsed.risks) ? parsed.risks : payload.risks, actions: Array.isArray(parsed.actions) ? parsed.actions : payload.actions };
   } catch {
-    return {
-      executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`,
-      strengths: payload.strengths,
-      weaknesses: payload.weaknesses,
-      risks: payload.risks,
-      actions: payload.actions
-    };
+    return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions };
   }
 }
 
 function createLoanApplicationReportPayload(loan) {
-  const score = clamp(Math.round((n(loan.creditScore) || 0)), 0, 1000);
-  const borrowerProfileScore = clamp(Math.round(score / 10), 0, 100);
-  return {
-    scoring: {
-      borrowerProfileScore,
-      bankWiseRating: borrowerProfileScore >= 80 ? 'A' : borrowerProfileScore >= 65 ? 'B' : 'NR',
-      riskBand: borrowerProfileScore >= 80 ? 'Low' : borrowerProfileScore >= 65 ? 'Medium' : 'High',
-      approvalStatus: borrowerProfileScore >= 70 ? 'Likely' : 'Review'
-    }
-  };
+  const borrowerProfileScore = clamp(Math.round((n(loan.creditScore) / 10) || 0), 0, 100);
+  return { scoring: { borrowerProfileScore, bankWiseRating: borrowerProfileScore >= 80 ? 'A' : borrowerProfileScore >= 65 ? 'B' : 'NR', riskBand: borrowerProfileScore >= 80 ? 'Low' : borrowerProfileScore >= 65 ? 'Medium' : 'High', approvalStatus: borrowerProfileScore >= 70 ? 'Likely' : 'Review' } };
 }
 
 function smeAdvisoryToPdfHtml(item) {
@@ -416,79 +316,35 @@ function smeAdvisoryWorkbook(item) {
   wb.creator = 'Financial Suite SaaS';
   const ws1 = wb.addWorksheet('SME Summary');
   ws1.columns = [{ header: 'Field', key: 'field', width: 30 }, { header: 'Value', key: 'value', width: 40 }];
-  [
-    ['Business Name', item.businessName],
-    ['Industry', item.industry],
-    ['Annual Turnover', item.annualTurnover],
-    ['EBITDA', item.ebitda],
-    ['Existing Debt', item.existingDebt],
-    ['Working Capital Cycle Days', item.workingCapitalCycleDays],
-    ['Collateral Value', item.collateralValue],
-    ['Owner Credit Score', item.ownerCreditScore],
-    ['Loan Amount Required', item.loanAmountRequired],
-    ['Loan Purpose', item.loanPurpose],
-    ['Bank Preference', item.bankPreference],
-    ['Readiness Score', item.readiness.score],
-    ['Readiness Band', item.readiness.band],
-    ['Recommendation Status', item.readiness.recommendationStatus]
-  ].forEach(([field, value]) => ws1.addRow({ field, value }));
-
-  const ws2 = wb.addWorksheet('Lender Matrix');
-  ws2.columns = [
-    { header: 'Bank', key: 'bankName', width: 16 },
-    { header: 'Score', key: 'score', width: 10 },
-    { header: 'DSCR Threshold', key: 'dscrThreshold', width: 15 },
-    { header: 'Fit', key: 'fit', width: 14 },
-    { header: 'Verdict', key: 'verdict', width: 12 }
-  ];
-  (item.lenderMatrix || []).forEach((b) => ws2.addRow(b));
+  [['Business Name', item.businessName],['Industry', item.industry],['Annual Turnover', item.annualTurnover],['EBITDA', item.ebitda],['Existing Debt', item.existingDebt],['Working Capital Cycle Days', item.workingCapitalCycleDays],['Collateral Value', item.collateralValue],['Owner Credit Score', item.ownerCreditScore],['Loan Amount Required', item.loanAmountRequired],['Loan Purpose', item.loanPurpose],['Bank Preference', item.bankPreference],['Readiness Score', item.readiness.score],['Readiness Band', item.readiness.band],['Recommendation Status', item.readiness.recommendationStatus]].forEach(([field, value]) => ws1.addRow({ field, value }));
   return wb;
 }
 
 async function getDashboardStats() {
-  const [totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories] = await Promise.all([
-    User.countDocuments(),
-    Client.countDocuments(),
-    Document.countDocuments(),
-    LoanApplication.countDocuments(),
-    SMEAdvisory.countDocuments()
-  ]);
+  const [totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories] = await Promise.all([User.countDocuments(), Client.countDocuments(), Document.countDocuments(), LoanApplication.countDocuments(), SMEAdvisory.countDocuments()]);
   return { totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories };
 }
 
-/* =========================
-   ROUTES
-========================= */
+/* ------------------- Routes ------------------- */
 app.get('/', (req, res) => (req.session.user ? res.redirect('/app') : res.redirect('/login')));
 app.get('/login', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'login' }); });
 app.get('/register', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'register' }); });
 
-app.post('/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) return renderLogin(res, { mode: 'register', error: 'All fields are required.' });
-    const normalizedEmail = String(email).trim().toLowerCase();
-    if (await User.findOne({ email: normalizedEmail })) return renderLogin(res, { mode: 'register', error: 'This email is already registered.' });
-    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = await User.create({ name: String(name).trim(), email: normalizedEmail, password: hashed, role: 'user', isActive: true });
-    req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role };
-    await writeAudit(req, 'REGISTER', 'user', user._id, 'User registered');
-    return res.redirect('/app');
-  } catch (error) {
-    console.error(error);
-    return renderLogin(res, { mode: 'register', error: 'Registration failed.' });
-  }
-});
+app.post('/register', async (req, res) => { try { const { name, email, password } = req.body; if (!name || !email || !password) return renderLogin(res, { mode: 'register', error: 'All fields are required.' }); const normalizedEmail = String(email).trim().toLowerCase(); if (await User.findOne({ email: normalizedEmail })) return renderLogin(res, { mode: 'register', error: 'This email is already registered.' }); const hashed = await bcrypt.hash(password, SALT_ROUNDS); const user = await User.create({ name: String(name).trim(), email: normalizedEmail, password: hashed, role: 'user', isActive: true }); req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role }; await writeAudit(req, 'REGISTER', 'user', user._id, 'User registered'); return res.redirect('/app'); } catch (error) { console.error(error); return renderLogin(res, { mode: 'register', error: 'Registration failed.' }); } });
 
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log('LOGIN ATTEMPT:', email, password);
     if (!email || !password) return renderLogin(res, { mode: 'login', error: 'Email and password are required.' });
     const normalizedEmail = String(email).trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
+    console.log('USER FOUND:', !!user);
+    if (user) { console.log('DB EMAIL:', user.email); console.log('DB HASH:', user.password); }
     if (!user) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
     if (!user.isActive) return renderLogin(res, { mode: 'login', error: 'Your account is inactive.' });
     const ok = await bcrypt.compare(password, user.password);
+    console.log('PASSWORD MATCH:', ok);
     if (!ok) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
     req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role };
     await writeAudit(req, 'LOGIN', 'user', user._id, 'User logged in');
@@ -499,12 +355,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('connect.sid');
-    res.redirect('/login');
-  });
-});
+app.post('/logout', (req, res) => { req.session.destroy(() => { res.clearCookie('connect.sid'); res.redirect('/login'); }); });
 
 app.get('/app', requireAuth, async (req, res) => {
   const stats = await getDashboardStats();
@@ -512,284 +363,36 @@ app.get('/app', requireAuth, async (req, res) => {
   const normalizedSection = ['clients', 'users', 'audit', 'documents', 'finance', 'loans', 'advisory'].includes(section) ? section : 'clients';
   const bankFilter = String(req.query.bank || '').trim();
   const advIndustry = String(req.query.advIndustry || '').trim();
-
   const clients = normalizedSection === 'clients' ? await Client.find({}).sort({ createdAt: -1 }).limit(25).lean() : [];
   const users = normalizedSection === 'users' ? await User.find({}).sort({ createdAt: -1 }).lean() : [];
   const auditLogs = normalizedSection === 'audit' ? await AuditLog.find({}).sort({ createdAt: -1 }).limit(100).lean() : [];
   const documents = normalizedSection === 'documents' ? await Document.find({}).sort({ createdAt: -1 }).limit(25).lean() : [];
   const loanApplications = normalizedSection === 'loans' ? await LoanApplication.find(bankFilter ? { bankName: { $regex: bankFilter, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
   const advisories = normalizedSection === 'advisory' ? await SMEAdvisory.find(advIndustry ? { industry: { $regex: advIndustry, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
-  const combinedFeed = [];
-
-  return res.render('app', {
-    title: 'Financial Suite | Dashboard',
-    user: req.session.user,
-    stats,
-    clients,
-    users,
-    auditLogs,
-    documents,
-    loanApplications,
-    advisories,
-    latestLoanApplication: loanApplications[0] || null,
-    latestAdvisory: advisories[0] || null,
-    combinedFeed,
-    section: normalizedSection,
-    bankFilter,
-    advIndustry,
-    navClientsUrl: `/app?${new URLSearchParams({ section: 'clients' })}`,
-    navUsersUrl: `/app?${new URLSearchParams({ section: 'users' })}`,
-    navAuditUrl: `/app?${new URLSearchParams({ section: 'audit' })}`,
-    navDocumentsUrl: `/app?${new URLSearchParams({ section: 'documents' })}`,
-    navFinanceUrl: `/app?${new URLSearchParams({ section: 'finance' })}`,
-    navLoansUrl: `/app?${new URLSearchParams({ section: 'loans' })}`,
-    navAdvisoryUrl: `/app?${new URLSearchParams({ section: 'advisory' })}`,
-    error: null,
-    success: null,
-    mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    serverStatus: 'Running'
-  });
+  return res.render('app', { title: 'Financial Suite | Dashboard', user: req.session.user, stats, clients, users, auditLogs, documents, loanApplications, advisories, latestLoanApplication: loanApplications[0] || null, latestAdvisory: advisories[0] || null, combinedFeed: [], section: normalizedSection, bankFilter, advIndustry, navClientsUrl: `/app?${new URLSearchParams({ section: 'clients' })}`, navUsersUrl: `/app?${new URLSearchParams({ section: 'users' })}`, navAuditUrl: `/app?${new URLSearchParams({ section: 'audit' })}`, navDocumentsUrl: `/app?${new URLSearchParams({ section: 'documents' })}`, navFinanceUrl: `/app?${new URLSearchParams({ section: 'finance' })}`, navLoansUrl: `/app?${new URLSearchParams({ section: 'loans' })}`, navAdvisoryUrl: `/app?${new URLSearchParams({ section: 'advisory' })}`, error: null, success: null, mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected', serverStatus: 'Running' });
 });
 
-app.post('/advisories', requireAuth, async (req, res) => {
-  try {
-    const input = {
-      businessName: req.body.businessName,
-      industry: req.body.industry,
-      annualTurnover: n(req.body.annualTurnover),
-      ebitda: n(req.body.ebitda),
-      existingDebt: n(req.body.existingDebt),
-      workingCapitalCycleDays: n(req.body.workingCapitalCycleDays),
-      collateralValue: n(req.body.collateralValue),
-      ownerCreditScore: n(req.body.ownerCreditScore),
-      loanAmountRequired: n(req.body.loanAmountRequired),
-      loanPurpose: req.body.loanPurpose,
-      bankPreference: req.body.bankPreference || 'Any',
-      currentAssets: n(req.body.currentAssets),
-      currentLiabilities: n(req.body.currentLiabilities),
-      notes: req.body.notes,
-      createdBy: req.session.user.email
-    };
+app.get('/health', (req, res) => res.json({ status: 'ok', server: 'running', mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', openai: openai ? 'configured' : 'not-configured' }));
 
-    const readinessScore = clamp(
-      Math.round(
-        (n(input.ownerCreditScore) / 10) +
-        (clamp((n(input.annualTurnover) / Math.max(n(input.loanAmountRequired), 1)) * 10, 0, 25)) +
-        (clamp((n(input.ebitda) / Math.max(n(input.annualTurnover), 1)) * 100, 0, 20)) +
-        (clamp(20 - (n(input.existingDebt) / Math.max(n(input.annualTurnover), 1)) * 20, 0, 20)) +
-        (clamp(20 - (n(input.workingCapitalCycleDays) / 120) * 20, 0, 20))
-      ),
-      0,
-      100
-    );
-
-    const bankComparison = bankComparisonFromAdvisory(input, readinessScore);
-    const lenderMatrix = lenderMatrixFromAdvisory(input, readinessScore);
-    const recs = advisoryRecommendations(input, readinessScore, bankComparison);
-    const ai = await openaiRecommendations({ advisoryInput: input, readinessScore, bankComparison, lenderMatrix, ...recs });
-
-    const advisory = await SMEAdvisory.create({
-      ...input,
-      readiness: {
-        score: readinessScore,
-        band: readinessBand(readinessScore),
-        recommendationStatus: readinessScore >= 80 ? 'Proceed' : readinessScore >= 60 ? 'Review' : 'High Risk'
-      },
-      lenderMatrix,
-      bankComparison,
-      recommendations: {
-        executiveSummary: ai.executiveSummary,
-        strengths: ai.strengths,
-        weaknesses: ai.weaknesses,
-        risks: ai.risks,
-        actions: ai.actions
-      }
-    });
-
-    await writeAudit(req, 'CREATE', 'sme_advisory', advisory._id, 'SME advisory created');
-    return res.redirect('/app?section=advisory');
-  } catch (error) {
-    console.error(error);
-    return res.status(500).send('Unable to create SME advisory.');
-  }
-});
-
-app.get('/advisory/:id/pdf', requireAuth, async (req, res) => {
-  try {
-    const item = await SMEAdvisory.findById(req.params.id).lean();
-    if (!item) return res.status(404).send('Advisory not found');
-    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(smeAdvisoryToPdfHtml(item), { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
-    await browser.close();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="sme_advisory_${item.businessName.replace(/\s+/g, '_')}.pdf"`);
-    return res.send(pdfBuffer);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send('Unable to generate advisory PDF');
-  }
-});
-
-app.get('/advisory/:id/xlsx', requireAuth, async (req, res) => {
-  try {
-    const item = await SMEAdvisory.findById(req.params.id).lean();
-    if (!item) return res.status(404).send('Advisory not found');
-    const wb = smeAdvisoryWorkbook(item);
-    const buffer = await wb.xlsx.writeBuffer();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="sme_advisory_${item.businessName.replace(/\s+/g, '_')}.xlsx"`);
-    return res.send(Buffer.from(buffer));
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send('Unable to generate advisory XLSX');
-  }
-});
-
-app.get('/advisories/:id/report', requireAuth, async (req, res) => {
-  try {
-    const item = await SMEAdvisory.findById(req.params.id).lean();
-    if (!item) return res.status(404).send('Advisory not found');
-    return res.json({ success: true, advisory: item });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, message: 'Unable to load advisory report' });
-  }
-});
-
-app.get('/advisory/export-batch.zip', requireAuth, async (req, res) => {
-  try {
-    const items = await SMEAdvisory.find({}).sort({ createdAt: -1 }).lean();
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="advisory_batch_pack.zip"');
-    archive.pipe(res);
-
-    const summaryHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Batch Summary</title><style>@page{size:A4;margin:18mm}body{font-family:Arial;margin:24px}h1{color:#0f172a}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e5e7eb;padding:8px;font-size:12px}th{background:#eff6ff}</style></head><body><h1>SME Advisory Batch Summary</h1><p>Total Advisories: ${items.length}</p><table><thead><tr><th>Business</th><th>Industry</th><th>Score</th><th>Band</th><th>Status</th></tr></thead><tbody>${items.map((i) => `<tr><td>${i.businessName}</td><td>${i.industry}</td><td>${i.readiness?.score || 0}</td><td>${i.readiness?.band || ''}</td><td>${i.readiness?.recommendationStatus || ''}</td></tr>`).join('')}</tbody></table></body></html>`;
-
-    const coverBrowser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const coverPage = await coverBrowser.newPage();
-    await coverPage.setContent(summaryHtml, { waitUntil: 'networkidle0' });
-    const summaryPdf = await coverPage.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
-    await coverBrowser.close();
-    archive.append(summaryPdf, { name: 'Summary_Cover.pdf' });
-
-    const indexWb = new ExcelJS.Workbook();
-    const ws = indexWb.addWorksheet('Index');
-    ws.columns = [
-      { header: 'Business', key: 'business', width: 24 },
-      { header: 'Industry', key: 'industry', width: 18 },
-      { header: 'File PDF', key: 'pdf', width: 28 },
-      { header: 'File XLSX', key: 'xlsx', width: 28 }
-    ];
-
-    for (const item of items) {
-      const pdfName = `${item.businessName.replace(/\s+/g, '_')}.pdf`;
-      const xlsxName = `${item.businessName.replace(/\s+/g, '_')}.xlsx`;
-      ws.addRow({ business: item.businessName, industry: item.industry, pdf: pdfName, xlsx: xlsxName });
-
-      const pdfBrowser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-      const pdfPage = await pdfBrowser.newPage();
-      await pdfPage.setContent(smeAdvisoryToPdfHtml(item), { waitUntil: 'networkidle0' });
-      const pdfBuffer = await pdfPage.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
-      await pdfBrowser.close();
-      archive.append(pdfBuffer, { name: pdfName });
-
-      const xwb = smeAdvisoryWorkbook(item);
-      const xbuf = await xwb.xlsx.writeBuffer();
-      archive.append(Buffer.from(xbuf), { name: xlsxName });
-    }
-
-    const indexBuffer = await indexWb.xlsx.writeBuffer();
-    archive.append(Buffer.from(indexBuffer), { name: 'master_index.xlsx' });
-
-    await archive.finalize();
-  } catch (error) {
-    console.error(error);
-    return res.status(500).send('Unable to create batch ZIP');
-  }
-});
-
-app.get('/loan-applications/export-all.xlsx', requireAuth, async (req, res) => {
-  try {
-    const loans = await LoanApplication.find({}).sort({ createdAt: -1 }).lean();
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('All Loan Applications');
-    ws.columns = [
-      { header: 'Applicant', key: 'applicantName', width: 22 },
-      { header: 'Bank', key: 'bankName', width: 14 },
-      { header: 'Amount', key: 'amount', width: 14 },
-      { header: 'Score', key: 'score', width: 10 },
-      { header: 'Risk Band', key: 'risk', width: 12 },
-      { header: 'Bank Rating', key: 'rating', width: 12 },
-      { header: 'Approval', key: 'approval', width: 12 }
-    ];
-
-    loans.forEach((loan) => {
-      const rep = createLoanApplicationReportPayload(loan);
-      ws.addRow({
-        applicantName: loan.applicantName,
-        bankName: loan.bankName,
-        amount: loan.loanAmountRequested,
-        score: rep.scoring.borrowerProfileScore,
-        risk: rep.scoring.riskBand,
-        rating: rep.scoring.bankWiseRating,
-        approval: rep.scoring.approvalStatus
-      });
-    });
-
-    const buffer = await wb.xlsx.writeBuffer();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="all_loan_applications.xlsx"');
-    return res.send(Buffer.from(buffer));
-  } catch (error) {
-    console.error(error);
-    return res.status(500).send('Unable to export all loans');
-  }
-});
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    server: 'running',
-    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    openai: openai ? 'configured' : 'not-configured'
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.error(err.message);
-  if (err.message === 'File too large.' || err.message === 'File type not allowed.') {
-    if (req.session.user) return renderApp(req, res, { error: err.message });
-    return renderLogin(res, { mode: 'login', error: err.message });
-  }
-  return res.status(500).send('Internal server error');
-});
-
-app.use((req, res) => {
-  if (req.session.user) return res.status(404).send('Page not found');
-  return res.redirect('/login');
-});
-
-/* =========================
-   STARTUP
-========================= */
+/* ------------------- Startup ------------------- */
 async function startServer() {
   try {
     await mongoose.connect(MONGODB_URI, { dbName: 'financial_suite' });
 
     const hashed = await bcrypt.hash(DEFAULT_ADMIN.password, SALT_ROUNDS);
-    const existing = await User.findOne({ email: DEFAULT_ADMIN.email });
-
-    if (!existing) {
-      await User.create({ ...DEFAULT_ADMIN, password: hashed });
-    } else {
-      await User.updateOne(
-        { email: DEFAULT_ADMIN.email },
-        { $set: { password: hashed, isActive: true, role: 'admin', name: 'Admin User' } }
-      );
-    }
+    await User.updateOne(
+      { email: DEFAULT_ADMIN.email },
+      {
+        $set: {
+          name: DEFAULT_ADMIN.name,
+          email: DEFAULT_ADMIN.email,
+          password: hashed,
+          role: DEFAULT_ADMIN.role,
+          isActive: DEFAULT_ADMIN.isActive
+        }
+      },
+      { upsert: true }
+    );
 
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   } catch (error) {
