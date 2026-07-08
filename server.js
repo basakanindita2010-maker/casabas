@@ -72,7 +72,9 @@ app.use(
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-/* ------------------- Schemas ------------------- */
+/* =========================
+   SCHEMAS
+========================= */
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
@@ -250,42 +252,192 @@ const SMEAdvisory = mongoose.model('SMEAdvisory', advisorySchema);
 const LoanApplication = mongoose.model('LoanApplication', loanApplicationSchema);
 const FinancialStatement = mongoose.model('FinancialStatement', financialStatementSchema);
 
-/* ------------------- Helpers ------------------- */
-function requireAuth(req, res, next) { if (!req.session.user) return res.redirect('/login'); next(); }
-function renderLogin(res, options = {}) { return res.render('login', { title: 'Financial Suite | Login', mode: options.mode || 'login', error: options.error || null, success: options.success || null, mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected', serverStatus: 'Running' }); }
-async function writeAudit(req, action, entity, entityId = '', details = '') { try { await AuditLog.create({ actorId: req.session.user?.id, actorEmail: req.session.user?.email || '', action, entity, entityId: String(entityId || ''), details }); } catch (e) { console.error('Audit log error:', e.message); } }
+/* =========================
+   HELPERS
+========================= */
+function requireAuth(req, res, next) {
+  if (!req.session.user) return res.redirect('/login');
+  next();
+}
+
+function renderLogin(res, options = {}) {
+  return res.render('login', {
+    title: 'Financial Suite | Login',
+    mode: options.mode || 'login',
+    error: options.error || null,
+    success: options.success || null,
+    mongoStatus: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    serverStatus: 'Running'
+  });
+}
+
+async function writeAudit(req, action, entity, entityId = '', details = '') {
+  try {
+    await AuditLog.create({
+      actorId: req.session.user?.id,
+      actorEmail: req.session.user?.email || '',
+      action,
+      entity,
+      entityId: String(entityId || ''),
+      details
+    });
+  } catch (e) {
+    console.error('Audit log error:', e.message);
+  }
+}
+
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function readinessBand(score) { if (score >= 80) return 'Ready'; if (score >= 60) return 'Near Ready'; if (score >= 40) return 'Monitor'; return 'High Risk'; }
-function bankComparisonFromAdvisory(app, readinessScore) { const banks = [{ bankName: 'SBI', min: 65 }, { bankName: 'HDFC', min: 72 }, { bankName: 'ICICI', min: 70 }, { bankName: 'Axis', min: 68 }]; return banks.map((b) => ({ bankName: b.bankName, score: clamp(Math.round(readinessScore), 0, 100), fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit', verdict: readinessScore >= b.min ? 'Proceed' : 'Review' })); }
-function lenderMatrixFromAdvisory(app, readinessScore) { const banks = [{ bankName: 'SBI', dscrThreshold: 1.25, min: 65 }, { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 }, { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 }, { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }]; return banks.map((b) => ({ bankName: b.bankName, score: clamp(Math.round(readinessScore), 0, 100), dscrThreshold: b.dscrThreshold, fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit', verdict: readinessScore >= b.min ? 'Proceed' : 'Review' })); }
-function advisoryRecommendations(app, readinessScore, bankComparison) { const strengths = [], weaknesses = [], risks = [], actions = []; if (readinessScore >= 80) strengths.push('Business is lending-ready based on the current profile.'); if (n(app.ebitda) > 0) strengths.push('EBITDA is positive.'); if (n(app.collateralValue) >= n(app.loanAmountRequired)) strengths.push('Collateral coverage is adequate.'); if (n(app.ownerCreditScore) >= 750) strengths.push('Owner credit profile is strong.'); if (n(app.ebitda) <= 0) weaknesses.push('EBITDA is weak or negative.'); if (n(app.existingDebt) > n(app.annualTurnover) * 0.8) weaknesses.push('Debt burden is high.'); if (n(app.workingCapitalCycleDays) > 90) weaknesses.push('Working capital cycle is stretched.'); if (readinessScore < 60) risks.push('Bank rejection risk is elevated.'); if (n(app.loanAmountRequired) > n(app.annualTurnover) * 0.5) risks.push('Requested amount may be aggressive versus turnover.'); if (n(app.currentLiabilities) > n(app.currentAssets)) risks.push('Liquidity risk is present.'); const topBank = bankComparison.find((b) => b.verdict === 'Proceed') || bankComparison[0]; actions.push(`Focus on ${topBank.bankName} as the primary lender option.`); actions.push('Improve DSCR and reduce working capital cycle where possible.'); actions.push('Prepare a lender note with cash flow summary and collateral details.'); return { strengths, weaknesses, risks, actions }; }
-async function openaiRecommendations(payload) { if (!openai) return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions }; try { const prompt = `You are an SME lending advisor. Business: ${JSON.stringify(payload.advisoryInput, null, 2)} Readiness score: ${payload.readinessScore} Lender matrix: ${JSON.stringify(payload.lenderMatrix || [], null, 2)} Bank comparison: ${JSON.stringify(payload.bankComparison, null, 2)} Return JSON only: { "executiveSummary": "string", "strengths": ["string"], "weaknesses": ["string"], "risks": ["string"], "actions": ["string"] }`; const completion = await openai.chat.completions.create({ model: OPENAI_MODEL, messages: [{ role: 'system', content: 'Return only valid JSON for SME lending advisory.' }, { role: 'user', content: prompt }], temperature: 0.35 }); const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}'); return { executiveSummary: parsed.executiveSummary || `SME readiness score: ${payload.readinessScore}/100.`, strengths: Array.isArray(parsed.strengths) ? parsed.strengths : payload.strengths, weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : payload.weaknesses, risks: Array.isArray(parsed.risks) ? parsed.risks : payload.risks, actions: Array.isArray(parsed.actions) ? parsed.actions : payload.actions }; } catch { return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions }; } }
-function createLoanApplicationReportPayload(loan) { const borrowerProfileScore = clamp(Math.round((n(loan.creditScore) / 10) || 0), 0, 100); return { scoring: { borrowerProfileScore, bankWiseRating: borrowerProfileScore >= 80 ? 'A' : borrowerProfileScore >= 65 ? 'B' : 'NR', riskBand: borrowerProfileScore >= 80 ? 'Low' : borrowerProfileScore >= 65 ? 'Medium' : 'High', approvalStatus: borrowerProfileScore >= 70 ? 'Likely' : 'Review' } }; }
-function smeAdvisoryToPdfHtml(item) { const bc = item.bankComparison || []; const lm = item.lenderMatrix || []; const rec = item.recommendations || {}; return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SME Advisory</title><style>@page{size:A4;margin:18mm}body{font-family:Arial;margin:24px;color:#1f2937}.card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e5e7eb;padding:8px;font-size:12px}th{background:#eff6ff}</style></head><body><h1>SME Lending Advisory Report</h1><div class="card"><p><strong>Business:</strong> ${item.businessName}</p><p><strong>Industry:</strong> ${item.industry}</p><p><strong>Readiness Score:</strong> ${item.readiness.score}/100</p><p><strong>Band:</strong> ${item.readiness.band}</p><p><strong>Status:</strong> ${item.readiness.recommendationStatus}</p><p><strong>Summary:</strong> ${rec.executiveSummary || ''}</p></div><div class="card"><h2>Lender Comparison Matrix</h2><table><thead><tr><th>Bank</th><th>Score</th><th>DSCR Threshold</th><th>Fit</th><th>Verdict</th></tr></thead><tbody>${lm.map((b) => `<tr><td>${b.bankName}</td><td>${b.score}</td><td>${b.dscrThreshold}</td><td>${b.fit}</td><td>${b.verdict}</td></tr>`).join('')}</tbody></table></div><div class="card"><h2>Bank Comparison</h2><table><thead><tr><th>Bank</th><th>Score</th><th>Fit</th><th>Verdict</th></tr></thead><tbody>${bc.map((b) => `<tr><td>${b.bankName}</td><td>${b.score}</td><td>${b.fit}</td><td>${b.verdict}</td></tr>`).join('')}</tbody></table></div></body></html>`; }
-function smeAdvisoryWorkbook(item) { const wb = new ExcelJS.Workbook(); wb.creator = 'Financial Suite SaaS'; const ws1 = wb.addWorksheet('SME Summary'); ws1.columns = [{ header: 'Field', key: 'field', width: 30 }, { header: 'Value', key: 'value', width: 40 }]; [['Business Name', item.businessName],['Industry', item.industry],['Annual Turnover', item.annualTurnover],['EBITDA', item.ebitda],['Existing Debt', item.existingDebt],['Working Capital Cycle Days', item.workingCapitalCycleDays],['Collateral Value', item.collateralValue],['Owner Credit Score', item.ownerCreditScore],['Loan Amount Required', item.loanAmountRequired],['Loan Purpose', item.loanPurpose],['Bank Preference', item.bankPreference],['Readiness Score', item.readiness.score],['Readiness Band', item.readiness.band],['Recommendation Status', item.readiness.recommendationStatus]].forEach(([field, value]) => ws1.addRow({ field, value })); return wb; }
-async function getDashboardStats() { const [totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories] = await Promise.all([User.countDocuments(), Client.countDocuments(), Document.countDocuments(), LoanApplication.countDocuments(), SMEAdvisory.countDocuments()]); return { totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories }; }
+function bankComparisonFromAdvisory(app, readinessScore) {
+  const banks = [
+    { bankName: 'SBI', min: 65 },
+    { bankName: 'HDFC', min: 72 },
+    { bankName: 'ICICI', min: 70 },
+    { bankName: 'Axis', min: 68 }
+  ];
+  return banks.map((b) => ({
+    bankName: b.bankName,
+    score: clamp(Math.round(readinessScore), 0, 100),
+    fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit',
+    verdict: readinessScore >= b.min ? 'Proceed' : 'Review'
+  }));
+}
+function lenderMatrixFromAdvisory(app, readinessScore) {
+  const banks = [
+    { bankName: 'SBI', dscrThreshold: 1.25, min: 65 },
+    { bankName: 'HDFC', dscrThreshold: 1.35, min: 72 },
+    { bankName: 'ICICI', dscrThreshold: 1.3, min: 70 },
+    { bankName: 'Axis', dscrThreshold: 1.28, min: 68 }
+  ];
+  return banks.map((b) => ({
+    bankName: b.bankName,
+    score: clamp(Math.round(readinessScore), 0, 100),
+    dscrThreshold: b.dscrThreshold,
+    fit: readinessScore >= b.min ? 'Good Fit' : 'Limited Fit',
+    verdict: readinessScore >= b.min ? 'Proceed' : 'Review'
+  }));
+}
+function advisoryRecommendations(app, readinessScore, bankComparison) {
+  const strengths = [];
+  const weaknesses = [];
+  const risks = [];
+  const actions = [];
+  if (readinessScore >= 80) strengths.push('Business is lending-ready based on the current profile.');
+  if (n(app.ebitda) > 0) strengths.push('EBITDA is positive.');
+  if (n(app.collateralValue) >= n(app.loanAmountRequired)) strengths.push('Collateral coverage is adequate.');
+  if (n(app.ownerCreditScore) >= 750) strengths.push('Owner credit profile is strong.');
+  if (n(app.ebitda) <= 0) weaknesses.push('EBITDA is weak or negative.');
+  if (n(app.existingDebt) > n(app.annualTurnover) * 0.8) weaknesses.push('Debt burden is high.');
+  if (n(app.workingCapitalCycleDays) > 90) weaknesses.push('Working capital cycle is stretched.');
+  if (readinessScore < 60) risks.push('Bank rejection risk is elevated.');
+  if (n(app.loanAmountRequired) > n(app.annualTurnover) * 0.5) risks.push('Requested amount may be aggressive versus turnover.');
+  if (n(app.currentLiabilities) > n(app.currentAssets)) risks.push('Liquidity risk is present.');
+  const topBank = bankComparison.find((b) => b.verdict === 'Proceed') || bankComparison[0];
+  actions.push(`Focus on ${topBank.bankName} as the primary lender option.`);
+  actions.push('Improve DSCR and reduce working capital cycle where possible.');
+  actions.push('Prepare a lender note with cash flow summary and collateral details.');
+  return { strengths, weaknesses, risks, actions };
+}
+async function openaiRecommendations(payload) {
+  if (!openai) return { executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`, strengths: payload.strengths, weaknesses: payload.weaknesses, risks: payload.risks, actions: payload.actions };
+  try {
+    const prompt = `You are an SME lending advisor. Business: ${JSON.stringify(payload.advisoryInput, null, 2)} Readiness score: ${payload.readinessScore} Lender matrix: ${JSON.stringify(payload.lenderMatrix || [], null, 2)} Bank comparison: ${JSON.stringify(payload.bankComparison, null, 2)} Return JSON only: { "executiveSummary": "string", "strengths": ["string"], "weaknesses": ["string"], "risks": ["string"], "actions": ["string"] }`;
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: 'Return only valid JSON for SME lending advisory.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.35
+    });
+    const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
+    return {
+      executiveSummary: parsed.executiveSummary || `SME readiness score: ${payload.readinessScore}/100.`,
+      strengths: Array.isArray(parsed.strengths) ? parsed.strengths : payload.strengths,
+      weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : payload.weaknesses,
+      risks: Array.isArray(parsed.risks) ? parsed.risks : payload.risks,
+      actions: Array.isArray(parsed.actions) ? parsed.actions : payload.actions
+    };
+  } catch {
+    return {
+      executiveSummary: `SME readiness score: ${payload.readinessScore}/100.`,
+      strengths: payload.strengths,
+      weaknesses: payload.weaknesses,
+      risks: payload.risks,
+      actions: payload.actions
+    };
+  }
+}
+function createLoanApplicationReportPayload(loan) {
+  const borrowerProfileScore = clamp(Math.round((n(loan.creditScore) / 10) || 0), 0, 100);
+  return {
+    scoring: {
+      borrowerProfileScore,
+      bankWiseRating: borrowerProfileScore >= 80 ? 'A' : borrowerProfileScore >= 65 ? 'B' : 'NR',
+      riskBand: borrowerProfileScore >= 80 ? 'Low' : borrowerProfileScore >= 65 ? 'Medium' : 'High',
+      approvalStatus: borrowerProfileScore >= 70 ? 'Likely' : 'Review'
+    }
+  };
+}
+function smeAdvisoryToPdfHtml(item) {
+  const bc = item.bankComparison || [];
+  const lm = item.lenderMatrix || [];
+  const rec = item.recommendations || {};
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SME Advisory</title><style>@page{size:A4;margin:18mm}body{font-family:Arial;margin:24px;color:#1f2937}.card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e5e7eb;padding:8px;font-size:12px}th{background:#eff6ff}</style></head><body><h1>SME Lending Advisory Report</h1><div class="card"><p><strong>Business:</strong> ${item.businessName}</p><p><strong>Industry:</strong> ${item.industry}</p><p><strong>Readiness Score:</strong> ${item.readiness.score}/100</p><p><strong>Band:</strong> ${item.readiness.band}</p><p><strong>Status:</strong> ${item.readiness.recommendationStatus}</p><p><strong>Summary:</strong> ${rec.executiveSummary || ''}</p></div><div class="card"><h2>Lender Comparison Matrix</h2><table><thead><tr><th>Bank</th><th>Score</th><th>DSCR Threshold</th><th>Fit</th><th>Verdict</th></tr></thead><tbody>${lm.map((b) => `<tr><td>${b.bankName}</td><td>${b.score}</td><td>${b.dscrThreshold}</td><td>${b.fit}</td><td>${b.verdict}</td></tr>`).join('')}</tbody></table></div><div class="card"><h2>Bank Comparison</h2><table><thead><tr><th>Bank</th><th>Score</th><th>Fit</th><th>Verdict</th></tr></thead><tbody>${bc.map((b) => `<tr><td>${b.bankName}</td><td>${b.score}</td><td>${b.fit}</td><td>${b.verdict}</td></tr>`).join('')}</tbody></table></div></body></html>`;
+}
+function smeAdvisoryWorkbook(item) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Financial Suite SaaS';
+  const ws1 = wb.addWorksheet('SME Summary');
+  ws1.columns = [{ header: 'Field', key: 'field', width: 30 }, { header: 'Value', key: 'value', width: 40 }];
+  [['Business Name', item.businessName],['Industry', item.industry],['Annual Turnover', item.annualTurnover],['EBITDA', item.ebitda],['Existing Debt', item.existingDebt],['Working Capital Cycle Days', item.workingCapitalCycleDays],['Collateral Value', item.collateralValue],['Owner Credit Score', item.ownerCreditScore],['Loan Amount Required', item.loanAmountRequired],['Loan Purpose', item.loanPurpose],['Bank Preference', item.bankPreference],['Readiness Score', item.readiness.score],['Readiness Band', item.readiness.band],['Recommendation Status', item.readiness.recommendationStatus]].forEach(([field, value]) => ws1.addRow({ field, value }));
+  return wb;
+}
+async function getDashboardStats() {
+  const [totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories] = await Promise.all([
+    User.countDocuments(),
+    Client.countDocuments(),
+    Document.countDocuments(),
+    LoanApplication.countDocuments(),
+    SMEAdvisory.countDocuments()
+  ]);
+  return { totalUsers, totalClients, totalDocuments, totalLoans, totalAdvisories };
+}
 
-/* ------------------- Routes ------------------- */
+/* =========================
+   ROUTES
+========================= */
 app.get('/', (req, res) => (req.session.user ? res.redirect('/app') : res.redirect('/login')));
 app.get('/login', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'login' }); });
 app.get('/register', (req, res) => { if (req.session.user) return res.redirect('/app'); renderLogin(res, { mode: 'register' }); });
 
-app.post('/register', async (req, res) => { try { const { name, email, password } = req.body; if (!name || !email || !password) return renderLogin(res, { mode: 'register', error: 'All fields are required.' }); const normalizedEmail = String(email).trim().toLowerCase(); if (await User.findOne({ email: normalizedEmail })) return renderLogin(res, { mode: 'register', error: 'This email is already registered.' }); const hashed = await bcrypt.hash(password, SALT_ROUNDS); const user = await User.create({ name: String(name).trim(), email: normalizedEmail, password: hashed, role: 'user', isActive: true }); req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role }; await writeAudit(req, 'REGISTER', 'user', user._id, 'User registered'); return res.redirect('/app'); } catch (error) { console.error(error); return renderLogin(res, { mode: 'register', error: 'Registration failed.' }); } });
+app.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return renderLogin(res, { mode: 'register', error: 'All fields are required.' });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (await User.findOne({ email: normalizedEmail })) return renderLogin(res, { mode: 'register', error: 'This email is already registered.' });
+    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+    const user = await User.create({ name: String(name).trim(), email: normalizedEmail, password: hashed, role: 'user', isActive: true });
+    req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role };
+    await writeAudit(req, 'REGISTER', 'user', user._id, 'User registered');
+    return res.redirect('/app');
+  } catch (error) {
+    console.error(error);
+    return renderLogin(res, { mode: 'register', error: 'Registration failed.' });
+  }
+});
 
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    console.log('LOGIN ATTEMPT:', email, password);
     if (!email || !password) return renderLogin(res, { mode: 'login', error: 'Email and password are required.' });
     const normalizedEmail = String(email).trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
-    console.log('USER FOUND:', !!user);
-    if (user) { console.log('DB EMAIL:', user.email); console.log('DB HASH:', user.password); }
     if (!user) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
     if (!user.isActive) return renderLogin(res, { mode: 'login', error: 'Your account is inactive.' });
     const ok = await bcrypt.compare(password, user.password);
-    console.log('PASSWORD MATCH:', ok);
     if (!ok) return renderLogin(res, { mode: 'login', error: 'Invalid email or password.' });
     req.session.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role };
     await writeAudit(req, 'LOGIN', 'user', user._id, 'User logged in');
@@ -296,7 +448,12 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/logout', (req, res) => { req.session.destroy(() => { res.clearCookie('connect.sid'); res.redirect('/login'); }); });
+app.post('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.redirect('/login');
+  });
+});
 
 app.get('/app', requireAuth, async (req, res) => {
   const stats = await getDashboardStats();
@@ -310,6 +467,8 @@ app.get('/app', requireAuth, async (req, res) => {
   const documents = normalizedSection === 'documents' ? await Document.find({}).sort({ createdAt: -1 }).limit(25).lean() : [];
   const loanApplications = normalizedSection === 'loans' ? await LoanApplication.find(bankFilter ? { bankName: { $regex: bankFilter, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
   const advisories = normalizedSection === 'advisory' ? await SMEAdvisory.find(advIndustry ? { industry: { $regex: advIndustry, $options: 'i' } } : {}).sort({ createdAt: -1 }).limit(50).lean() : [];
+  const combinedFeed = [];
+
   return res.render('app', {
     title: 'Financial Suite | Dashboard',
     user: req.session.user,
@@ -322,7 +481,7 @@ app.get('/app', requireAuth, async (req, res) => {
     advisories,
     latestLoanApplication: loanApplications[0] || null,
     latestAdvisory: advisories[0] || null,
-    combinedFeed: [],
+    combinedFeed,
     section: normalizedSection,
     bankFilter,
     advIndustry,
@@ -340,7 +499,14 @@ app.get('/app', requireAuth, async (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', server: 'running', mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', openai: openai ? 'configured' : 'not-configured' }));
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    server: 'running',
+    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    openai: openai ? 'configured' : 'not-configured'
+  });
+});
 
 app.use((err, req, res, next) => {
   console.error(err.message);
@@ -353,9 +519,14 @@ app.use((err, req, res, next) => {
   return res.status(500).send('Internal server error');
 });
 
-app.use((req, res) => { if (req.session.user) return res.status(404).send('Page not found'); return res.redirect('/login'); });
+app.use((req, res) => {
+  if (req.session.user) return res.status(404).send('Page not found');
+  return res.redirect('/login');
+});
 
-/* ------------------- Startup ------------------- */
+/* =========================
+   STARTUP
+========================= */
 async function startServer() {
   try {
     await mongoose.connect(MONGODB_URI, { dbName: 'financial_suite' });
