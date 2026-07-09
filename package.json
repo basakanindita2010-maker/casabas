@@ -1,7 +1,7 @@
 {
   "name": "erp-saas-suite",
   "version": "1.0.0",
-  "description": "Commercial SaaS ERP with accounting, stock aging, debtors aging, bank statement categorization, reporting, printing, audit logging, and role-based access.",
+  "description": "Commercial ERP SaaS with accounting, stock aging, debtors aging, bank categorization, printable reports, audit logging, and role-based access.",
   "main": "server.js",
   "engines": {
     "node": ">=20.0.0"
