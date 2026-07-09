@@ -208,16 +208,13 @@ const Notification = mongoose.model('Notification', new mongoose.Schema({
 }, { timestamps: true }));
 
 async function seed() {
-  const adminEmail = 'admin@company.com';
-  const adminPassword = 'admin123';
-
   await User.updateOne(
-    { email: adminEmail },
+    { email: 'admin@company.com' },
     {
       $set: {
         fullName: 'System Administrator',
-        email: adminEmail,
-        passwordHash: hashPassword(adminPassword),
+        email: 'admin@company.com',
+        passwordHash: hashPassword('admin123'),
         role: 'Administrator',
         status: 'Active',
         mustChangePassword: false
@@ -226,11 +223,11 @@ async function seed() {
     { upsert: true }
   );
 
-  const defs = [
+  const defaults = [
     ['app_name', 'ERP SaaS Suite'],
     ['company_name', 'Company']
   ];
-  for (const [key, value] of defs) {
+  for (const [key, value] of defaults) {
     const exists = await Setting.findOne({ key }).lean();
     if (!exists) await Setting.create({ key, value, description: key, status: 'Active' });
   }
@@ -268,8 +265,7 @@ function pageInfo(page) {
     audit: ['Audit Log', 'fa-shield-halved'],
     settings: ['Settings', 'fa-gear']
   };
-  const v = map[page] || map.dashboard;
-  return { title: v[0], icon: v[1] };
+  return { title: map[page]?.[0] || 'Dashboard', icon: map[page]?.[1] || 'fa-chart-line' };
 }
 
 async function audit(req, data) {
@@ -302,7 +298,7 @@ async function renderApp(req, res) {
   const invAgg = await Invoice.aggregate([{ $group: { _id: null, total: { $sum: '$total' }, paid: { $sum: '$paidAmount' }, balance: { $sum: '$balance' } } }]);
   const finance = invAgg[0] || { total: 0, paid: 0, balance: 0 };
 
-  let payload = { records: [], total: 0, pageNo: 1, limit: 10, pages: 1, q: {} };
+  let payload = { records: [], total: 0, q: {} };
   let charts = {};
 
   if (page === 'dashboard') {
@@ -354,7 +350,8 @@ async function renderApp(req, res) {
     user: req.session.user,
     money,
     fmtDate,
-    flash: res.locals.flash
+    flash: res.locals.flash,
+    roles
   });
 }
 
@@ -370,13 +367,11 @@ app.post('/login', async (req, res) => {
     const email = safeTrim(req.body.email).toLowerCase();
     const password = safeTrim(req.body.password);
     const remember = req.body.remember === 'on';
-
     const user = await User.findOne({ email }).lean();
     if (!user || !verifyPassword(password, user.passwordHash) || user.status !== 'Active') {
       flash(req, 'danger', 'Invalid credentials.');
       return res.redirect('/login');
     }
-
     req.session.regenerate(async (err) => {
       if (err) {
         flash(req, 'danger', 'Session error.');
@@ -399,7 +394,7 @@ app.post('/logout', requireAuth, async (req, res) => {
 });
 
 app.post('/forgot-password', async (req, res) => {
-  flash(req, 'info', 'Reset architecture created. Integrate email delivery for production.');
+  flash(req, 'info', 'Reset architecture created.');
   return res.redirect('/login');
 });
 
