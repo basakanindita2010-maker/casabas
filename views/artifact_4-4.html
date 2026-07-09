@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= appName %> | <%= title %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#020617 0,#0f172a 100%);color:#e5e7eb}
+    .sidebar{background:#0b1220;min-height:100vh;border-right:1px solid rgba(255,255,255,.08);position:sticky;top:0}
+    .sidebar .nav-link{color:#cbd5e1;border-radius:12px;padding:.8rem 1rem;margin:.2rem 0}
+    .sidebar .nav-link.active,.sidebar .nav-link:hover{background:rgba(124,58,237,.18);color:#fff}
+    .topbar{background:rgba(15,23,42,.8);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.08)}
+    .card,.table{background:rgba(17,24,39,.78)!important;color:#e5e7eb!important;border:1px solid rgba(255,255,255,.08)!important}
+    .form-control,.form-select{background:rgba(255,255,255,.05)!important;border-color:rgba(255,255,255,.12)!important;color:#fff!important}
+    .form-control::placeholder{color:#94a3b8}
+    .badge-soft{background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.25);color:#fff}
+  </style>
+</head>
+<body>
+<div class="container-fluid">
+  <div class="row g-0">
+    <aside class="col-lg-2 sidebar p-3">
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="bg-primary rounded-4 d-grid place-items-center" style="width:52px;height:52px"><i class="fa-solid fa-building-columns"></i></div>
+        <div>
+          <div class="fw-bold"><%= appName %></div>
+          <div class="text-white-50 small">Enterprise SaaS</div>
+        </div>
+      </div>
+      <nav class="nav flex-column">
+        <% nav.forEach(item => { %>
+          <a class="nav-link <%= page === item.key ? 'active' : '' %>" href="/app?page=<%= item.key %>">
+            <i class="fa-solid <%= item.icon %> me-2"></i><%= item.label %>
+          </a>
+        <% }) %>
+      </nav>
+      <div class="mt-4 p-3 rounded-4" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+        <div class="small text-white-50">Logged in as</div>
+        <div class="fw-semibold"><%= user.fullName %></div>
+        <div class="small text-white-50"><%= user.role %></div>
+      </div>
+    </aside>
+
+    <main class="col-lg-10">
+      <div class="topbar sticky-top px-3 px-md-4 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h4 class="mb-0 fw-bold"><i class="fa-solid <%= icon %> me-2"></i><%= title %></h4>
+          <div class="text-white-50 small">Professional commercial reporting and operations platform</div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-light btn-sm" href="/print/<%= page %>?page=<%= page %>"><i class="fa-solid fa-print me-1"></i>Print</a>
+          <a class="btn btn-outline-info btn-sm" href="/export/<%= page %>"><i class="fa-solid fa-file-export me-1"></i>Export CSV</a>
+          <form method="post" action="/logout">
+            <button class="btn btn-danger btn-sm"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="p-3 p-md-4">
+        <% if (flash) { %>
+          <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
+        <% } %>
+
+        <% if (page === 'dashboard') { %>
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Clients</div><div class="fs-3 fw-bold"><%= stats.clients %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Invoices</div><div class="fs-3 fw-bold"><%= stats.invoices %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Outstanding</div><div class="fs-3 fw-bold"><%= money(stats.finance.balance) %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Bank Entries</div><div class="fs-3 fw-bold"><%= stats.bankEntries %></div></div></div>
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Monthly Invoices</h6><canvas id="invChart" height="130"></canvas></div></div>
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Payments</h6><canvas id="payChart" height="130"></canvas></div></div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Stock Aging</h6><canvas id="stockAgeChart" height="130"></canvas></div></div>
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Debtors Aging</h6><canvas id="debtorAgeChart" height="130"></canvas></div></div>
+          </div>
+
+          <script>
+            const monthlyInvoice = <%- JSON.stringify(charts.monthlyInvoice || []) %>;
+            const monthlyPayments = <%- JSON.stringify(charts.monthlyPayments || []) %>;
+            const stockBuckets = <%- JSON.stringify(charts.stockBuckets || { '0-30':0, '31-60':0, '61-90':0, '90+':0 }) %>;
+            const debtorBuckets = <%- JSON.stringify(charts.debtorBuckets || { '0-30':0, '31-60':0, '61-90':0, '90+':0 }) %>;
+
+            new Chart(document.getElementById('invChart'), {
+              type:'line',
+              data:{labels:monthlyInvoice.map(x=>x._id),datasets:[{label:'Invoices',data:monthlyInvoice.map(x=>x.total),borderColor:'#8b5cf6',tension:.35}]},
+              options:{plugins:{legend:{labels:{color:'#fff'}}},scales:{x:{ticks:{color:'#cbd5e1'}},y:{ticks:{color:'#cbd5e1'}}}}
+            });
+
+            new Chart(document.getElementById('payChart'), {
+              type:'bar',
+              data:{labels:monthlyPayments.map(x=>x._id),datasets:[{label:'Payments',data:monthlyPayments.map(x=>x.total),backgroundColor:'#06b6d4'}]},
+              options:{plugins:{legend:{labels:{color:'#fff'}}},scales:{x:{ticks:{color:'#cbd5e1'}},y:{ticks:{color:'#cbd5e1'}}}}
+            });
+
+            new Chart(document.getElementById('stockAgeChart'), {
+              type:'doughnut',
+              data:{labels:Object.keys(stockBuckets),datasets:[{data:Object.values(stockBuckets),backgroundColor:['#22c55e','#f59e0b','#ef4444','#8b5cf6']}]},
+              options:{plugins:{legend:{labels:{color:'#fff'}}}}
+            });
+
+            new Chart(document.getElementById('debtorAgeChart'), {
+              type:'doughnut',
+              data:{labels:Object.keys(debtorBuckets),datasets:[{data:Object.values(debtorBuckets),backgroundColor:['#38bdf8','#f59e0b','#ef4444','#a855f7']}]},
+              options:{plugins:{legend:{labels:{color:'#fff'}}}}
+            });
+          </script>
+        <% } %>
+
+        <% if (page === 'reports') { %>
+          <div class="row g-3 mb-4">
+            <div class="col-lg-4"><div class="card p-3"><div class="text-white-50 small">Total Revenue</div><div class="fs-4 fw-bold"><%= money(stats.finance.total) %></div></div></div>
+            <div class="col-lg-4"><div class="card p-3"><div class="text-white-50 small">Total Paid</div><div class="fs-4 fw-bold"><%= money(stats.finance.paid) %></div></div></div>
+            <div class="col-lg-4"><div class="card p-3"><div class="text-white-50 small">Outstanding</div><div class="fs-4 fw-bold"><%= money(stats.finance.balance) %></div></div></div>
+          </div>
+
+          <div class="card p-3 mb-4">
+            <h6 class="fw-bold">Debtors Aging Report</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th>Invoice</th><th>Client</th><th>Invoice Date</th><th>Due Date</th><th>Balance</th><th>Age</th></tr></thead>
+                <tbody>
+                  <% (charts.debtorAgeing || []).forEach(row => {
+                    const age = Math.floor((Date.now() - new Date(row.invoiceDate).getTime()) / 86400000);
+                  %>
+                    <tr>
+                      <td><%= row.invoiceNo %></td>
+                      <td><%= row.client?.name || '-' %></td>
+                      <td><%= fmtDate(row.invoiceDate) %></td>
+                      <td><%= fmtDate(row.dueDate) %></td>
+                      <td><%= money(row.balance) %></td>
+                      <td><span class="badge badge-soft"><%= age %> days</span></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-3 mb-4">
+            <h6 class="fw-bold">Stock Aging Report</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th>Item</th><th>Category</th><th>Received</th><th>Qty</th><th>Unit Cost</th><th>Age</th></tr></thead>
+                <tbody>
+                  <% (charts.stockItems || []).forEach(row => {
+                    const age = Math.floor((Date.now() - new Date(row.receivedAt).getTime()) / 86400000);
+                  %>
+                    <tr>
+                      <td><%= row.itemName %></td>
+                      <td><%= row.category %></td>
+                      <td><%= fmtDate(row.receivedAt) %></td>
+                      <td><%= row.currentQty %></td>
+                      <td><%= money(row.unitCost) %></td>
+                      <td><span class="badge badge-soft"><%= age %> days</span></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-3">
+            <h6 class="fw-bold">Bank Statement Categorisation Report</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th>Date</th><th>Description</th><th>Reference</th><th>Debit</th><th>Credit</th><th>Category</th><th>Matched Client</th></tr></thead>
+                <tbody>
+                  <% (charts.bankItems || []).forEach(row => { %>
+                    <tr>
+                      <td><%= fmtDate(row.statementDate) %></td>
+                      <td><%= row.description %></td>
+                      <td><%= row.reference %></td>
+                      <td><%= money(row.debit) %></td>
+                      <td><%= money(row.credit) %></td>
+                      <td><span class="badge badge-soft"><%= row.category %></span></td>
+                      <td><%= row.matchedClient?.name || '-' %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% } %>
+
+        <% function renderPaginatedTable(rows, cols) { %><% } %>
+
+        <% if (['clients','users','invoices','payments','bank','stock','notifications','audit'].includes(page)) { %>
+          <div class="card p-3 mb-4">
+            <form class="row g-2" method="get" action="/app">
+              <input type="hidden" name="page" value="<%= page %>">
+              <div class="col-md-4"><input class="form-control" name="search" value="<%= payload.q?.search || '' %>" placeholder="Search..."></div>
+              <div class="col-md-2"><input class="form-control" name="status" value="<%= payload.q?.status || '' %>" placeholder="Status"></div>
+              <div class="col-md-2"><select class="form-select" name="sort"><option value="createdAt">Created At</option><option value="updatedAt">Updated At</option><option value="status">Status</option></select></div>
+              <div class="col-md-2"><select class="form-select" name="dir"><option value="desc">Desc</option><option value="asc">Asc</option></select></div>
+              <div class="col-md-2 d-grid"><button class="btn btn-primary">Filter</button></div>
+            </form>
+          </div>
+
+          <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="fw-bold"><%= title %> List</div>
+              <div class="text-white-50 small">Total: <%= payload.total %></div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <% if (page === 'clients') { %><th>Code</th><th>Name</th><th>Contact</th><th>Phone</th><th>Credit Limit</th><th>Action</th><% } %>
+                    <% if (page === 'users') { %><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th><% } %>
+                    <% if (page === 'invoices') { %><th>Invoice</th><th>Client</th><th>Total</th><th>Balance</th><th>Payment</th><th>Action</th><% } %>
+                    <% if (page === 'payments') { %><th>Reference</th><th>Client</th><th>Amount</th><th>Mode</th><th>Action</th><% } %>
+                    <% if (page === 'bank') { %><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Category</th><th>Action</th><% } %>
+                    <% if (page === 'stock') { %><th>Code</th><th>Item</th><th>Category</th><th>Qty</th><th>Age</th><th>Action</th><% } %>
+                    <% if (page === 'notifications') { %><th>Title</th><th>Severity</th><th>Read</th><th>Action</th><% } %>
+                    <% if (page === 'audit') { %><th>Action</th><th>Entity</th><th>Actor</th><th>Created At</th><% } %>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% (payload.records || []).forEach((r, i) => { %>
+                    <tr>
+                      <td><%= i + 1 %></td>
+                      <% if (page === 'clients') { %><td><%= r.clientCode %></td><td><%= r.name %></td><td><%= r.contactPerson %></td><td><%= r.phone %></td><td><%= money(r.creditLimit) %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'users') { %><td><%= r.fullName %></td><td><%= r.email %></td><td><%= r.role %></td><td><%= r.status %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'invoices') { %><td><%= r.invoiceNo %></td><td><%= r.client?.name || '-' %></td><td><%= money(r.total) %></td><td><%= money(r.balance) %></td><td><%= r.paymentStatus %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'payments') { %><td><%= r.referenceNo %></td><td><%= r.client?.name || '-' %></td><td><%= money(r.amount) %></td><td><%= r.mode %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'bank') { %><td><%= fmtDate(r.statementDate) %></td><td><%= r.description %></td><td><%= money(r.debit) %></td><td><%= money(r.credit) %></td><td><%= r.category %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Categorize</button></td><% } %>
+                      <% if (page === 'stock') { %><td><%= r.itemCode %></td><td><%= r.itemName %></td><td><%= r.category %></td><td><%= r.currentQty %></td><td><%= Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86400000) %> days</td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'notifications') { %><td><%= r.title %></td><td><%= r.severity %></td><td><%= r.isRead ? 'Yes' : 'No' %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#edit<%= i %>">Edit</button></td><% } %>
+                      <% if (page === 'audit') { %><td><%= r.action %></td><td><%= r.entityType %></td><td><%= r.actorEmail || '-' %></td><td><%= fmtDate(r.createdAt) %></td><% } %>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
