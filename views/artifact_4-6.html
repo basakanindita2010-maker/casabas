@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= appName %> | <%= title %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#020617 0,#0f172a 100%);color:#e5e7eb}
+    .sidebar{background:#0b1220;min-height:100vh;border-right:1px solid rgba(255,255,255,.08);position:sticky;top:0}
+    .sidebar .nav-link{color:#cbd5e1;border-radius:12px;padding:.8rem 1rem;margin:.2rem 0}
+    .sidebar .nav-link.active,.sidebar .nav-link:hover{background:rgba(124,58,237,.18);color:#fff}
+    .topbar{background:rgba(15,23,42,.8);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.08)}
+    .card,.table{background:rgba(17,24,39,.78)!important;color:#e5e7eb!important;border:1px solid rgba(255,255,255,.08)!important}
+    .form-control,.form-select{background:rgba(255,255,255,.05)!important;border-color:rgba(255,255,255,.12)!important;color:#fff!important}
+    .form-control::placeholder{color:#94a3b8}
+    .badge-soft{background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.25);color:#fff}
+    .modal-content{background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,.08)}
+  </style>
+</head>
+<body>
+<div class="container-fluid">
+  <div class="row g-0">
+    <aside class="col-lg-2 sidebar p-3">
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="bg-primary rounded-4 d-grid place-items-center" style="width:52px;height:52px"><i class="fa-solid fa-building-columns"></i></div>
+        <div>
+          <div class="fw-bold"><%= appName %></div>
+          <div class="text-white-50 small">Enterprise SaaS</div>
+        </div>
+      </div>
+      <nav class="nav flex-column">
+        <% nav.forEach(item => { %>
+          <a class="nav-link <%= page === item.key ? 'active' : '' %>" href="/app?page=<%= item.key %>">
+            <i class="fa-solid <%= item.icon %> me-2"></i><%= item.label %>
+          </a>
+        <% }) %>
+      </nav>
+      <div class="mt-4 p-3 rounded-4" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+        <div class="small text-white-50">Logged in as</div>
+        <div class="fw-semibold"><%= user.fullName %></div>
+        <div class="small text-white-50"><%= user.role %></div>
+      </div>
+    </aside>
+
+    <main class="col-lg-10">
+      <div class="topbar sticky-top px-3 px-md-4 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h4 class="mb-0 fw-bold"><i class="fa-solid <%= icon %> me-2"></i><%= title %></h4>
+          <div class="text-white-50 small">Professional commercial reporting and operations platform</div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-light btn-sm" href="/print/<%= page %>?page=<%= page %>"><i class="fa-solid fa-print me-1"></i>Print</a>
+          <a class="btn btn-outline-info btn-sm" href="/export/<%= page %>"><i class="fa-solid fa-file-export me-1"></i>Export CSV</a>
+          <form method="post" action="/logout"><button class="btn btn-danger btn-sm"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button></form>
+        </div>
+      </div>
+
+      <div class="p-3 p-md-4">
+        <% if (flash) { %>
+          <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
+        <% } %>
+
+        <% if (page === 'dashboard') { %>
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Clients</div><div class="fs-3 fw-bold"><%= stats.clients %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Invoices</div><div class="fs-3 fw-bold"><%= stats.invoices %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Outstanding</div><div class="fs-3 fw-bold"><%= money(finance.balance) %></div></div></div>
+            <div class="col-md-3"><div class="card p-3"><div class="text-white-50 small">Bank Entries</div><div class="fs-3 fw-bold"><%= stats.bank %></div></div></div>
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Invoice Trend</h6><canvas id="invoiceChart" height="130"></canvas></div></div>
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Payment Trend</h6><canvas id="paymentChart" height="130"></canvas></div></div>
+          </div>
+          <div class="row g-3">
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Stock Aging</h6><canvas id="stockChart" height="130"></canvas></div></div>
+            <div class="col-lg-6"><div class="card p-3"><h6 class="fw-bold">Debtors Aging</h6><canvas id="debtorChart" height="130"></canvas></div></div>
+          </div>
+          <script>
+            const invoiceMonthly = <%- JSON.stringify(charts.invoiceMonthly || []) %>;
+            const paymentMonthly = <%- JSON.stringify(charts.paymentMonthly || []) %>;
+            const stockBuckets = <%- JSON.stringify(charts.stockBuckets || {'0-30':0,'31-60':0,'61-90':0,'90+':0}) %>;
+            const debtorBuckets = <%- JSON.stringify(charts.debtorBuckets || {'0-30':0,'31-60':0,'61-90':0,'90+':0}) %>;
+            new Chart(document.getElementById('invoiceChart'),{type:'line',data:{labels:invoiceMonthly.map(x=>x._id),datasets:[{label:'Invoices',data:invoiceMonthly.map(x=>x.total),borderColor:'#8b5cf6',tension:.35}]},options:{plugins:{legend:{labels:{color:'#fff'}}},scales:{x:{ticks:{color:'#cbd5e1'}},y:{ticks:{color:'#cbd5e1'}}}}});
+            new Chart(document.getElementById('paymentChart'),{type:'bar',data:{labels:paymentMonthly.map(x=>x._id),datasets:[{label:'Payments',data:paymentMonthly.map(x=>x.total),backgroundColor:'#06b6d4'}]},options:{plugins:{legend:{labels:{color:'#fff'}}},scales:{x:{ticks:{color:'#cbd5e1'}},y:{ticks:{color:'#cbd5e1'}}}}});
+            new Chart(document.getElementById('stockChart'),{type:'doughnut',data:{labels:Object.keys(stockBuckets),datasets:[{data:Object.values(stockBuckets),backgroundColor:['#22c55e','#f59e0b','#ef4444','#8b5cf6']}]},options:{plugins:{legend:{labels:{color:'#fff'}}}}});
+            new Chart(document.getElementById('debtorChart'),{type:'doughnut',data:{labels:Object.keys(debtorBuckets),datasets:[{data:Object.values(debtorBuckets),backgroundColor:['#38bdf8','#f59e0b','#ef4444','#a855f7']}]},options:{plugins:{legend:{labels:{color:'#fff'}}}}});
+          </script>
+        <% } %>
+
+        <% function modalId(prefix, idx) { return prefix + idx; } %>
+
+        <% if (['clients','users','invoices','payments','bank','stock','notifications'].includes(page)) { %>
+          <div class="d-flex justify-content-end mb-3">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal"><i class="fa-solid fa-plus me-1"></i>Create <%= title %></button>
+          </div>
+
+          <div class="card p-3 mb-4">
+            <form class="row g-2" method="get" action="/app">
+              <input type="hidden" name="page" value="<%= page %>">
+              <div class="col-md-4"><input class="form-control" name="search" value="<%= payload.q?.search || '' %>" placeholder="Search..."></div>
+              <div class="col-md-2"><button class="btn btn-primary w-100">Search</button></div>
+            </form>
+          </div>
+
+          <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="fw-bold"><%= title %> List</div>
+              <div class="text-white-50 small">Total: <%= payload.total %></div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <% if (page === 'clients') { %><th>Code</th><th>Name</th><th>Contact</th><th>Phone</th><th>Credit Limit</th><th>Action</th><% } %>
+                    <% if (page === 'users') { %><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th><% } %>
+                    <% if (page === 'invoices') { %><th>Invoice</th><th>Client</th><th>Total</th><th>Balance</th><th>Status</th><th>Action</th><% } %>
+                    <% if (page === 'payments') { %><th>Reference</th><th>Client</th><th>Amount</th><th>Mode</th><th>Action</th><% } %>
+                    <% if (page === 'bank') { %><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Category</th><th>Action</th><% } %>
+                    <% if (page === 'stock') { %><th>Code</th><th>Item</th><th>Category</th><th>Qty</th><th>Age</th><th>Action</th><% } %>
+                    <% if (page === 'notifications') { %><th>Title</th><th>Severity</th><th>Read</th><th>Action</th><% } %>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% (payload.records || []).forEach((r, i) => { %>
+                    <tr>
+                      <td><%= i + 1 %></td>
+                      <% if (page === 'clients') { %><td><%= r.clientCode %></td><td><%= r.name %></td><td><%= r.contactPerson %></td><td><%= r.phone %></td><td><%= money(r.creditLimit) %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'users') { %><td><%= r.fullName %></td><td><%= r.email %></td><td><%= r.role %></td><td><%= r.status %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'invoices') { %><td><%= r.invoiceNo %></td><td><%= r.client?.name || '-' %></td><td><%= money(r.total) %></td><td><%= money(r.balance) %></td><td><%= r.paymentStatus %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'payments') { %><td><%= r.referenceNo %></td><td><%= r.client?.name || '-' %></td><td><%= money(r.amount) %></td><td><%= r.mode %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'bank') { %><td><%= fmtDate(r.statementDate) %></td><td><%= r.description %></td><td><%= money(r.debit) %></td><td><%= money(r.credit) %></td><td><%= r.category %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Categorize</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'stock') { %><td><%= r.itemCode %></td><td><%= r.itemName %></td><td><%= r.category %></td><td><%= r.currentQty %></td><td><%= Math.floor((Date.now()-new Date(r.receivedAt).getTime())/86400000) %> days</td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                      <% if (page === 'notifications') { %><td><%= r.title %></td><td><%= r.severity %></td><td><%= r.isRead ? 'Yes' : 'No' %></td><td><button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editModal<%= i %>">Edit</button> <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<%= i %>">Delete</button></td><% } %>
+                    </tr>
+
+                    <div class="modal fade" id="editModal<%= i %>" tabindex="-1">
+                      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                        <div class="modal-content">
+                          <div class="modal-header">
+                            <h5 class="modal-title">Edit <%= title %></h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                          </div>
+                          <form method="post" action="/app/<%= page %>/update?page=<%= page %>">
+                            <div class="modal-body">
+                              <input type="hidden" name="id" value="<%= r._id %>">
+                              <div class="row g-3">
+                                <% if (page === 'clients') { %>
+                                  <div class="col-md-6"><label class="form-label">Client Code</label><input name="clientCode" class="form-control" value="<%= r.clientCode %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Name</label><input name="name" class="form-control" value="<%= r.name %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Contact Person</label><input name="contactPerson" class="form-control" value="<%= r.contactPerson %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Email</label><input name="email" class="form-control" value="<%= r.email %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Phone</label><input name="phone" class="form-control" value="<%= r.phone %>"></div>
+                                  <div class="col-md-6"><label class="form-label">GST No</label><input name="gstNo" class="form-control" value="<%= r.gstNo %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Credit Limit</label><input name="creditLimit" class="form-control" value="<%= r.creditLimit %>"></div>
+                                  <div class="col-12"><label class="form-label">Address</label><textarea name="address" class="form-control"><%= r.address %></textarea></div>
+                                <% } %>
+
+                                <% if (page === 'users') { %>
+                                  <div class="col-md-6"><label class="form-label">Full Name</label><input name="fullName" class="form-control" value="<%= r.fullName %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Email</label><input name="email" class="form-control" value="<%= r.email %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Role</label><select name="role" class="form-select"><% roles.forEach(role => { %><option <%= r.role===role ? 'selected' : '' %>><%= role %></option><% }) %></select></div>
+                                  <div class="col-md-6"><label class="form-label">Phone</label><input name="phone" class="form-control" value="<%= r.phone %>"></div>
+                                <% } %>
+
+                                <% if (page === 'invoices') { %>
+                                  <div class="col-md-6"><label class="form-label">Invoice No</label><input name="invoiceNo" class="form-control" value="<%= r.invoiceNo %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Client ID</label><input name="clientId" class="form-control" value="<%= r.client?._id || '' %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Subtotal</label><input name="subtotal" class="form-control" value="<%= r.subtotal %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Tax</label><input name="tax" class="form-control" value="<%= r.tax %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Paid Amount</label><input name="paidAmount" class="form-control" value="<%= r.paidAmount %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Payment Status</label><input name="paymentStatus" class="form-control" value="<%= r.paymentStatus %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Invoice Date</label><input type="date" name="invoiceDate" class="form-control" value="<%= r.invoiceDate ? new Date(r.invoiceDate).toISOString().slice(0,10) : '' %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Due Date</label><input type="date" name="dueDate" class="form-control" value="<%= r.dueDate ? new Date(r.dueDate).toISOString().slice(0,10) : '' %>"></div>
+                                  <div class="col-12"><label class="form-label">Notes</label><textarea name="notes" class="form-control"><%= r.notes || '' %></textarea></div>
+                                <% } %>
+
+                                <% if (page === 'payments') { %>
+                                  <div class="col-md-6"><label class="form-label">Reference No</label><input name="referenceNo" class="form-control" value="<%= r.referenceNo %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Client ID</label><input name="clientId" class="form-control" value="<%= r.client?._id || '' %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Invoice ID</label><input name="invoiceId" class="form-control" value="<%= r.invoice?._id || '' %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Amount</label><input name="amount" class="form-control" value="<%= r.amount %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Mode</label><input name="mode" class="form-control" value="<%= r.mode %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Payment Date</label><input type="date" name="paymentDate" class="form-control" value="<%= r.paymentDate ? new Date(r.paymentDate).toISOString().slice(0,10) : '' %>"></div>
+                                <% } %>
+
+                                <% if (page === 'bank') { %>
+                                  <div class="col-md-6"><label class="form-label">Statement Date</label><input type="date" name="statementDate" class="form-control" value="<%= r.statementDate ? new Date(r.statementDate).toISOString().slice(0,10) : '' %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Reference</label><input name="reference" class="form-control" value="<%= r.reference %>"></div>
+                                  <div class="col-12"><label class="form-label">Description</label><input name="description" class="form-control" value="<%= r.description %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Debit</label><input name="debit" class="form-control" value="<%= r.debit %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Credit</label><input name="credit" class="form-control" value="<%= r.credit %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Balance</label><input name="balance" class="form-control" value="<%= r.balance %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Category</label><input name="category" class="form-control" value="<%= r.category %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Sub Category</label><input name="subCategory" class="form-control" value="<%= r.subCategory %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Matched Client ID</label><input name="matchedClient" class="form-control" value="<%= r.matchedClient?._id || '' %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Matched Invoice ID</label><input name="matchedInvoice" class="form-control" value="<%= r.matchedInvoice?._id || '' %>"></div>
+                                <% } %>
+
+                                <% if (page === 'stock') { %>
+                                  <div class="col-md-6"><label class="form-label">Item Code</label><input name="itemCode" class="form-control" value="<%= r.itemCode %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Item Name</label><input name="itemName" class="form-control" value="<%= r.itemName %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Category</label><input name="category" class="form-control" value="<%= r.category %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Unit</label><input name="unit" class="form-control" value="<%= r.unit %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Opening Qty</label><input name="openingQty" class="form-control" value="<%= r.openingQty %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Purchase Qty</label><input name="purchaseQty" class="form-control" value="<%= r.purchaseQty %>"></div>
+                                  <div class="col-md-4"><label class="form-label">Sale Qty</label><input name="saleQty" class="form-control" value="<%= r.saleQty %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Unit Cost</label><input name="unitCost" class="form-control" value="<%= r.unitCost %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Sale Price</label><input name="salePrice" class="form-control" value="<%= r.salePrice %>"></div>
+                                <% } %>
+
+                                <% if (page === 'notifications') { %>
+                                  <div class="col-md-6"><label class="form-label">Title</label><input name="title" class="form-control" value="<%= r.title %>"></div>
+                                  <div class="col-md-6"><label class="form-label">Severity</label><input name="severity" class="form-control" value="<%= r.severity %>"></div>
+                                  <div class="col-12"><label class="form-label">Message</label><textarea name="message" class="form-control"><%= r.message %></textarea></div>
+                                  <div class="col-md-6"><label class="form-label">Read</label>
+                                    <select name="isRead" class="form-select">
+                                      <option value="false" <%= r.isRead ? '' : 'selected' %>>No</option>
+                                      <option value="true" <%= r.isRead ? 'selected' : '' %>>Yes</option>
+                                    </select>
+                                  </div>
+                                <% } %>
+                              </div>
+                            </div>
+                            <div class="modal-footer">
+                              <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                              <button type="submit" class="btn btn-primary">Save Changes</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="modal fade" id="deleteModal<%= i %>" tabindex="-1">
+                      <div class="modal-dialog">
+                        <div class="modal-content">
+                          <div class="modal-header">
+                            <h5 class="modal-title">Delete <%= title %></h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                          </div>
+                          <form method="post" action="/app/<%= page %>/delete?page=<%= page %>">
+                            <div class="modal-body">
+                              <input type="hidden" name="id" value="<%= r._id %>">
+                              <p class="mb-0">Are you sure you want to delete this record?</p>
+                            </div>
+                            <div class="modal-footer">
+                              <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                              <button type="submit" class="btn btn-danger">Delete</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </main>
+  </div>
+</div>
+
+<% if (['clients','users','invoices','payments','bank','stock','notifications'].includes(page)) { %>
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create <%= title %></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/app/<%= page %>/create?page=<%= page %>">
+        <div class="modal-body">
+          <div class="row g-3">
+            <% if (page === 'clients') { %>
+              <div class="col-md-6"><label class="form-label">Client Code</label><input name="clientCode" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Contact Person</label><input name="contactPerson" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Email</label><input name="email" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Phone</label><input name="phone" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">GST No</label><input name="gstNo" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Credit Limit</label><input name="creditLimit" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Opening Balance</label><input name="openingBalance" class="form-control"></div>
+              <div class="col-12"><label class="form-label">Address</label><textarea name="address" class="form-control"></textarea></div>
+            <% } %>
+
+            <% if (page === 'users') { %>
+              <div class="col-md-6"><label class="form-label">Full Name</label><input name="fullName" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Email</label><input name="email" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Password</label><input name="password" class="form-control" value="ChangeMe123!"></div>
+              <div class="col-md-6"><label class="form-label">Role</label><select name="role" class="form-select"><% roles.forEach(role => { %><option><%= role %></option><% }) %></select></div>
+              <div class="col-md-6"><label class="form-label">Phone</label><input name="phone" class="form-control"></div>
+            <% } %>
+
+            <% if (page === 'invoices') { %>
+              <div class="col-md-6"><label class="form-label">Invoice No</label><input name="invoiceNo" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Client ID</label><input name="clientId" class="form-control" required></div>
+              <div class="col-md-4"><label class="form-label">Subtotal</label><input name="subtotal" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Tax</label><input name="tax" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Paid Amount</label><input name="paidAmount" class="form-control" value="0"></div>
+              <div class="col-md-6"><label class="form-label">Payment Status</label><input name="paymentStatus" class="form-control" value="Unpaid"></div>
+              <div class="col-md-6"><label class="form-label">Invoice Date</label><input type="date" name="invoiceDate" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Due Date</label><input type="date" name="dueDate" class="form-control"></div>
+              <div class="col-12"><label class="form-label">Notes</label><textarea name="notes" class="form-control"></textarea></div>
+            <% } %>
+
+            <% if (page === 'payments') { %>
+              <div class="col-md-6"><label class="form-label">Reference No</label><input name="referenceNo" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Client ID</label><input name="clientId" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Invoice ID</label><input name="invoiceId" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Amount</label><input name="amount" class="form-control" value="0"></div>
+              <div class="col-md-6"><label class="form-label">Mode</label><input name="mode" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Payment Date</label><input type="date" name="paymentDate" class="form-control"></div>
+            <% } %>
+
+            <% if (page === 'bank') { %>
+              <div class="col-md-6"><label class="form-label">Statement Date</label><input type="date" name="statementDate" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Reference</label><input name="reference" class="form-control"></div>
+              <div class="col-12"><label class="form-label">Description</label><input name="description" class="form-control"></div>
+              <div class="col-md-4"><label class="form-label">Debit</label><input name="debit" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Credit</label><input name="credit" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Balance</label><input name="balance" class="form-control" value="0"></div>
+              <div class="col-md-6"><label class="form-label">Category</label><input name="category" class="form-control" value="Uncategorized"></div>
+              <div class="col-md-6"><label class="form-label">Sub Category</label><input name="subCategory" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Matched Client ID</label><input name="matchedClient" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Matched Invoice ID</label><input name="matchedInvoice" class="form-control"></div>
+            <% } %>
+
+            <% if (page === 'stock') { %>
+              <div class="col-md-6"><label class="form-label">Item Code</label><input name="itemCode" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Item Name</label><input name="itemName" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Category</label><input name="category" class="form-control"></div>
+              <div class="col-md-6"><label class="form-label">Unit</label><input name="unit" class="form-control"></div>
+              <div class="col-md-4"><label class="form-label">Opening Qty</label><input name="openingQty" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Purchase Qty</label><input name="purchaseQty" class="form-control" value="0"></div>
+              <div class="col-md-4"><label class="form-label">Sale Qty</label><input name="saleQty" class="form-control" value="0"></div>
+              <div class="col-md-6"><label class="form-label">Unit Cost</label><input name="unitCost" class="form-control" value="0"></div>
+              <div class="col-md-6"><label class="form-label">Sale Price</label><input name="salePrice" class="form-control" value="0"></div>
+            <% } %>
+
+            <% if (page === 'notifications') { %>
+              <div class="col-md-6"><label class="form-label">Title</label><input name="title" class="form-control" required></div>
+              <div class="col-md-6"><label class="form-label">Severity</label><input name="severity" class="form-control" value="info"></div>
+              <div class="col-12"><label class="form-label">Message</label><textarea name="message" class="form-control"></textarea></div>
+            <% } %>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
